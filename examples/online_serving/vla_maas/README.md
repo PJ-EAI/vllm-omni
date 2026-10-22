@@ -21,15 +21,15 @@ first three at runtime).
 ## Mock loop (CPU, no simulator)
 
 ```bash
-python mock_policy_server.py --port 8000 --latency-ms 80 --jitter-ms 10 &
+python3 mock_policy_server.py --port 8000 --latency-ms 80 --jitter-ms 10 &
 
 # Sync: execute 5 actions, then block on the next chunk (OpenPI LIBERO protocol).
-python libero_eval.py --mock --port 8000 --max-tasks 3 --episodes-per-task 5
+python3 libero_eval.py --mock --port 8000 --max-tasks 3 --episodes-per-task 5
 
 # Async at 50 Hz: prefetch when 10 actions remain; `underruns` counts stalls.
-python libero_eval.py --mock --port 8000 --replan-steps 20 --async-prefetch 10 --control-hz 50
+python3 libero_eval.py --mock --port 8000 --replan-steps 20 --async-prefetch 10 --control-hz 50
 
-python latency_bench.py --port 8000 \
+python3 latency_bench.py --port 8000 \
     --cameras observation.images.image observation.images.image2 --state-dim 8
 ```
 
@@ -48,7 +48,7 @@ vllm serve /path/to/pi05_libero_checkpoint --omni --port 8000 \
     --served-model-name pi05 --deploy-config examples/online_serving/vla_maas/pi05_libero.yaml \
     --enforce-eager --disable-log-stats
 
-python libero_eval.py --port 8000 --task-suite libero_spatial --episodes-per-task 10 \
+python3 libero_eval.py --port 8000 --task-suite libero_spatial --episodes-per-task 10 \
     --base-camera-key <checkpoint base camera key> --wrist-camera-key <checkpoint wrist camera key>
 ```
 

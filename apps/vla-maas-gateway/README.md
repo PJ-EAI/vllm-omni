@@ -25,6 +25,9 @@ backend times out (`request_timeout_s`).
 bash apps/vla-maas-gateway/run_demo.sh 10   # episodes per task
 ```
 
+The script uses `python3`; set `PYTHON=/path/to/python` to use an interpreter
+from a virtualenv instead.
+
 Starts two mock backends (`pi05` at 60 ms, `internvla_a1` at 90 ms), the gateway,
 and a mock-LIBERO client per model at 50 Hz. Open `http://localhost:9000/dashboard`
 and enter the API key (`dev-key-change-me`) to watch success rate, p50/p99 relay
@@ -37,11 +40,11 @@ counts it and does not forward it.
 
 ```bash
 V=examples/online_serving/vla_maas
-python $V/mock_policy_server.py --port 8001 --latency-ms 60 &
-python $V/mock_policy_server.py --port 8002 --latency-ms 90 &
-python apps/vla-maas-gateway/gateway.py --config apps/vla-maas-gateway/gateway.example.yaml &
+python3 $V/mock_policy_server.py --port 8001 --latency-ms 60 &
+python3 $V/mock_policy_server.py --port 8002 --latency-ms 90 &
+python3 apps/vla-maas-gateway/gateway.py --config apps/vla-maas-gateway/gateway.example.yaml &
 
-python $V/libero_eval.py --mock --port 9000 --path /v1/robot/pi05/openpi \
+python3 $V/libero_eval.py --mock --port 9000 --path /v1/robot/pi05/openpi \
     --api-key dev-key-change-me --replan-steps 20 --async-prefetch 10 --control-hz 50
 curl -H "Authorization: Api-Key dev-key-change-me" localhost:9000/metrics
 ```
