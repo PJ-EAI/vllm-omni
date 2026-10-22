@@ -1,0 +1,15 @@
+# Single-tenant gateway config. Keys can also come from VLA_MAAS_API_KEY.
+api_keys:
+  - dev-key-change-me
+
+# Seconds to wait for one inference reply before failing the session.
+request_timeout_s: 5.0
+
+# Each model lists vllm-omni OpenPI endpoints; sessions go to the least-loaded one.
+models:
+  pi05:
+    backends:
+      - ws://127.0.0.1:8001/v1/realtime/robot/openpi
+  internvla_a1:
+    backends:
+      - ws://127.0.0.1:8002/v1/realtime/robot/openpi

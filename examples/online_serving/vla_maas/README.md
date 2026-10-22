@@ -37,6 +37,10 @@ The mock policy reads the goal and end effector from the agent-view pixels, so a
 non-zero success rate shows images, state and actions survive the round trip in
 the right layout.
 
+To go through the MaaS gateway (API key, model routing, metrics), see
+[`apps/vla-maas-gateway`](../../../apps/vla-maas-gateway/README.md) and pass
+`--path /v1/robot/<model>/openpi --api-key <key>` to either client.
+
 ## Real loop (GPU + LIBERO)
 
 ```bash

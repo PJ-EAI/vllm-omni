@@ -49,10 +49,11 @@ def main() -> int:
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--iters", type=int, default=50)
     parser.add_argument("--control-hz", type=float, default=50.0, help="Robot control rate for the budget check.")
+    parser.add_argument("--api-key", default=None, help="Sent as `Authorization: Api-Key <key>`.")
     parser.add_argument("--output", type=Path, default=None, help="Write the summary as JSON.")
     args = parser.parse_args()
 
-    policy, metadata = connect_policy(args.host, args.port, args.path)
+    policy, metadata = connect_policy(args.host, args.port, args.path, api_key=args.api_key)
     horizon = int(metadata.get("action_horizon", 0))
     print(f"server metadata: {metadata}")
 
