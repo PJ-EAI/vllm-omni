@@ -10,12 +10,28 @@ mock in `examples/online_serving/vla_maas/mock_policy_server.py`) and adds:
   the least-loaded backend configured for that model.
 - **Transparent OpenPI relay**: frames pass through unchanged; the handshake
   metadata gains `model` and `backend`.
+- **Dashboard**: `GET /dashboard`, a live panel that polls `/metrics` with the key
+  typed into it.
 - **Metrics**: `GET /metrics` returns per-model request/error counts, active
   sessions and relay p50/p99. `GET /v1/models` lists models, `GET /healthz` is open.
 
 Errors: 401 for a missing or wrong key, 404 for an unknown model, websocket close
 1011 when a backend is unreachable, and an OpenPI `{"type": "error"}` reply when a
 backend times out (`request_timeout_s`).
+
+## One-command demo
+
+```bash
+bash apps/vla-maas-gateway/run_demo.sh 10   # episodes per task
+```
+
+Starts two mock backends (`pi05` at 60 ms, `internvla_a1` at 90 ms), the gateway,
+and a mock-LIBERO client per model at 50 Hz. Open `http://localhost:9000/dashboard`
+and enter the API key (`dev-key-change-me`) to watch success rate, p50/p99 relay
+latency against the 100 ms budget, requests, sessions and errors per model.
+Clients run with `--report-episodes`, which sends
+`{"endpoint": "episode_result", "success": bool}` after each episode; the gateway
+counts it and does not forward it.
 
 ## Run with mock backends
 

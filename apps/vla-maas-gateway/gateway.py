@@ -9,8 +9,13 @@ Clients connect to ``ws://<gateway>/v1/robot/<model>/openpi`` with
 model, and relays OpenPI frames one-to-one. The handshake metadata is the
 backend's, plus ``model`` and ``backend`` so clients can log what served them.
 
+Clients may send ``{"endpoint": "episode_result", "success": bool}`` on the
+same socket after an episode; the gateway records it for the dashboard, answers
+``{"status": "ok"}`` and does not forward it.
+
 HTTP endpoints on the same port:
     GET /healthz      liveness
+    GET /dashboard    live demo panel (polls /metrics with the key typed into it)
     GET /v1/models    configured models and backend counts (auth required)
     GET /metrics      per-model request counts, errors and relay latency (auth required)
 
@@ -31,6 +36,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from http import HTTPStatus
+from pathlib import Path
 
 import numpy as np
 import yaml
@@ -45,6 +51,9 @@ logger = logging.getLogger("vla_maas_gateway")
 
 ROBOT_PATH = re.compile(r"^/v1/robot/(?P<model>[A-Za-z0-9._-]+)/openpi$")
 LATENCY_WINDOW = 1000
+# Control frames carry no images; anything larger is an observation, relayed undecoded.
+MAX_CONTROL_FRAME_BYTES = 4096
+DASHBOARD_HTML = Path(__file__).with_name("dashboard.html")
 
 
 @dataclass
@@ -58,6 +67,8 @@ class ModelStats:
     requests: int = 0
     errors: int = 0
     sessions: int = 0
+    episodes: int = 0
+    successes: int = 0
     latencies_ms: deque[float] = field(default_factory=lambda: deque(maxlen=LATENCY_WINDOW))
 
     def snapshot(self) -> dict:
@@ -66,6 +77,8 @@ class ModelStats:
             "requests": self.requests,
             "errors": self.errors,
             "active_sessions": self.sessions,
+            "episodes": self.episodes,
+            "success_rate": self.successes / self.episodes if self.episodes else None,
             "relay_p50_ms": float(np.percentile(lat, 50)) if lat is not None else None,
             "relay_p99_ms": float(np.percentile(lat, 99)) if lat is not None else None,
         }
@@ -101,6 +114,11 @@ class Gateway:
     def process_request(self, _: ServerConnection, request: Request) -> Response | None:
         if request.path == "/healthz":
             return _json_response(HTTPStatus.OK, {"status": "ok"})
+        if request.path == "/dashboard":
+            # The page holds no data; it calls /metrics with the key the viewer enters.
+            body = DASHBOARD_HTML.read_bytes()
+            headers = Headers([("Content-Type", "text/html; charset=utf-8"), ("Content-Length", str(len(body)))])
+            return Response(HTTPStatus.OK.value, HTTPStatus.OK.phrase, headers, body)
         if not self.authorized(request.headers):
             return _json_response(HTTPStatus.UNAUTHORIZED, {"error": "invalid or missing API key"})
         if request.path == "/v1/models":
@@ -131,6 +149,13 @@ class Gateway:
                 metadata.update(model=model, backend=backend.url)
                 await client.send(packer.pack(metadata))
                 async for frame in client:
+                    if isinstance(frame, bytes) and len(frame) <= MAX_CONTROL_FRAME_BYTES:
+                        control = msgpack_numpy.unpackb(frame)
+                        if isinstance(control, dict) and control.get("endpoint") == "episode_result":
+                            stats.episodes += 1
+                            stats.successes += int(bool(control.get("success")))
+                            await client.send(packer.pack({"status": "ok"}))
+                            continue
                     start = time.perf_counter()
                     stats.requests += 1
                     try:

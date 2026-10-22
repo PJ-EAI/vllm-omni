@@ -130,6 +130,11 @@ def main() -> int:
     parser.add_argument("--control-hz", type=float, default=0.0, help="Pace env steps in wall-clock (0 = off).")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--mock", action="store_true", help="Use mock_libero instead of the real LIBERO.")
+    parser.add_argument(
+        "--report-episodes",
+        action="store_true",
+        help="Send each episode's outcome to the MaaS gateway dashboard (gateway only).",
+    )
     parser.add_argument("--api-key", default=None, help="Sent as `Authorization: Api-Key <key>`.")
     parser.add_argument("--output", type=Path, default=None, help="Write the summary as JSON.")
     args = parser.parse_args()
@@ -159,6 +164,9 @@ def main() -> int:
         for ep in range(args.episodes_per_task):
             ok = run_episode(env, init_states[ep], task.language, executor, args, MAX_STEPS[args.task_suite])
             successes += int(ok)
+            if args.report_episodes:
+                executor.wait()  # the socket carries one request at a time
+                policy.infer({"endpoint": "episode_result", "success": ok})
             print(f"[task {task_id} ep {ep}] {'success' if ok else 'fail'}: {task.language}")
         env.close()
         per_task[task.language] = successes / args.episodes_per_task
