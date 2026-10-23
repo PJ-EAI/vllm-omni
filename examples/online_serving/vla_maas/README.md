@@ -5,7 +5,7 @@ the OpenPI websocket endpoint `/v1/realtime/robot/openpi`, with a mock path that
 runs the whole loop on CPU before GPUs or the LIBERO simulator are involved.
 
 | File | Role |
-|---|---|
+| --- | --- |
 | `vla_client.py` | OpenPI connection helpers and `AsyncChunkExecutor` (background-prefetching action queue for a fixed-rate control loop). |
 | `libero_eval.py` | Closed-loop LIBERO evaluation: success rate, inference latency, control-loop stalls. `--mock` swaps in `mock_libero`. |
 | `latency_bench.py` | Client E2E round-trip benchmark (p50/p90/p99) with synthetic observations. |
