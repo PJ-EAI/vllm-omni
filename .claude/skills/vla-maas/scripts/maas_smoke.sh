@@ -28,7 +28,7 @@ pass() { echo "ok   $*"; }
 "$PYTHON" -c "import websockets, msgpack, msgpack_numpy, yaml, numpy, openpi_client.websocket_client_policy" \
   || fail "client extras missing (see references/maas-stack.md, Client dependencies)"
 
-"$PYTHON" "$CLIENTS/mock_policy_server.py" --port "$BACKEND_PORT" --latency-ms 20 --jitter-ms 2 \
+"$PYTHON" "$CLIENTS/mock_policy_server.py" --port "$BACKEND_PORT" --latency-ms 20 --jitter-ms 2 --max-batch 8 \
   >"$OUT_DIR/backend.log" 2>&1 &
 PIDS+=($!)
 printf 'api_keys: [%s]\nrequest_timeout_s: 5.0\nmodels:\n  pi05:\n    backends:\n      - ws://127.0.0.1:%s/v1/realtime/robot/openpi\n' \
