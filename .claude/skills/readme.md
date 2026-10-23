@@ -57,6 +57,10 @@ self-check.
 - [`review-pr`](review-pr/SKILL.md): provides a frozen-snapshot, contract-aware
   workflow for maintainers and reviewers; contributors should use
   `precheck-pr` for self-review
+- [`vla-maas`](vla-maas/SKILL.md): orients agents in the VLA Model-as-a-Service
+  stack (OpenPI serving, request batching, gateway, mock backends, fleet and
+  LIBERO clients) and gives CPU smoke tests and cluster-job scripts for
+  serving and benchmarking VLAs
 - [`vllm-omni-npu-model-runner-upgrade`](vllm-omni-npu-upgrade/SKILL.md):
   upgrades NPU model runners to align with the latest vllm-ascend
   `NPUModelRunner`
