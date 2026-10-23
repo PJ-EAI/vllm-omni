@@ -1,0 +1,50 @@
+# π0.5 on LIBERO for the VLA MaaS baseline. Same as vllm_omni/deploy/pi05.yaml
+# except: bfloat16, camera keys derived from the checkpoint's input_features
+# (LIBERO fine-tunes use two cameras, not pi05_base's three), and request
+# batching across concurrent robot sessions (max_num_seqs below).
+
+pipeline: pi05
+async_chunk: false
+distributed_executor_backend: mp
+# float32 or bfloat16. bfloat16 is faster and halves memory at a numerical cost;
+# read "Choosing a dtype" in the recipe before switching.
+dtype: bfloat16
+
+stages:
+  - stage_id: 0
+    devices: "0"
+    # Concurrent robot sessions on this replica share one batched forward
+    # (Pi05Pipeline.supports_request_batch). Set 1 to serve them one at a time.
+    max_num_seqs: 16
+    enforce_eager: true
+    model_class_name: Pi05Pipeline
+    model_config:
+      paligemma_variant: gemma_2b
+      action_expert_variant: gemma_300m
+      chunk_size: 50
+      # Must equal chunk_size: this endpoint returns the whole chunk and keeps no
+      # action queue, so "execute the first N steps, then replan" is not available.
+      n_action_steps: 50
+      max_action_dim: 32
+      max_state_dim: 32
+      num_inference_steps: 10
+      image_resolution: [224, 224]
+      tokenizer_max_length: 200
+      state_num_bins: 256
+      max_cameras: 3
+      image_key_map: {}
+      use_relative_actions: false
+      relative_exclude_joints:
+        - gripper
+      # OpenPI handshake metadata advertised to the robot client.
+      policy_server_config:
+        image_resolution: [224, 224]
+        n_external_cameras: 1
+        needs_wrist_camera: true
+        needs_stereo_camera: false
+        needs_session_id: false
+        action_space: joint_position
+        action_horizon: 50
+        action_dim: 32
+        max_action_dim: 32
+        max_cameras: 3

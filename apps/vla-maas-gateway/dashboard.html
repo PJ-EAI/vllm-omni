@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VLA MaaS Dashboard</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --card: #ffffff; --ink: #1d1d1b; --quiet: #6b6b66; --rule: #e4e4df;
+    --accent: #2f6fdb; --good: #2e8b57; --bad: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --card: #20201e; --ink: #ecece8; --quiet: #a3a39c; --rule: #33332f;
+            --accent: #6b9cf0; --good: #5cc28a; --bad: #e57368; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.5 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  h1 { font-size: 20px; margin: 0; }
+  .key { display: flex; gap: 8px; }
+  input { font: inherit; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 6px;
+          background: var(--card); color: var(--ink); width: 220px; }
+  #status { color: var(--quiet); font-size: 12px; margin-top: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-top: 20px; }
+  .card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; }
+  .card h2 { font-size: 16px; margin: 0 0 12px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat .l { color: var(--quiet); font-size: 12px; }
+  .ok { color: var(--good); } .warn { color: var(--bad); }
+  svg { width: 100%; height: 72px; margin-top: 12px; display: block; }
+  .legend { color: var(--quiet); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>VLA MaaS 实时面板</h1>
+      <div id="status">输入 API Key 后开始刷新</div>
+    </div>
+    <div class="key">
+      <input id="key" type="password" placeholder="API Key" autocomplete="off">
+    </div>
+  </header>
+  <div class="grid" id="grid"></div>
+</main>
+<script>
+const BUDGET_MS = 100, HISTORY = 120;
+const keyInput = document.getElementById('key');
+const grid = document.getElementById('grid');
+const statusEl = document.getElementById('status');
+const history = {};
+const lastSeen = {};  // model -> {requests, t} for the throughput delta
+try { keyInput.value = localStorage.getItem('vla-maas-key') || ''; } catch (e) {}
+keyInput.addEventListener('change', () => { try { localStorage.setItem('vla-maas-key', keyInput.value); } catch (e) {} });
+
+const fmt = (v, digits = 0) => v == null ? '–' : v.toFixed(digits);
+
+function sparkline(points) {
+  if (points.length < 2) return '<svg viewBox="0 0 300 72"></svg>';
+  const max = Math.max(BUDGET_MS * 1.5, ...points);
+  const x = i => (i / (HISTORY - 1)) * 300, y = v => 68 - (v / max) * 64;
+  const offset = HISTORY - points.length;
+  const d = points.map((v, i) => `${i ? 'L' : 'M'}${x(i + offset).toFixed(1)} ${y(v).toFixed(1)}`).join('');
+  return `<svg viewBox="0 0 300 72" preserveAspectRatio="none" role="img" aria-label="relay p50 history">
+    <line x1="0" x2="300" y1="${y(BUDGET_MS)}" y2="${y(BUDGET_MS)}" stroke="var(--bad)" stroke-dasharray="4 4" stroke-width="1" vector-effect="non-scaling-stroke"/>
+    <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+function render(metrics) {
+  grid.innerHTML = Object.entries(metrics).map(([model, m]) => {
+    (history[model] ||= []).push(m.relay_p50_ms ?? 0);
+    if (history[model].length > HISTORY) history[model].shift();
+    const now = performance.now(), prev = lastSeen[model];
+    const rps = prev && now > prev.t ? (m.requests - prev.requests) / ((now - prev.t) / 1000) : null;
+    lastSeen[model] = { requests: m.requests, t: now };
+    const p99Class = m.relay_p99_ms == null ? '' : (m.relay_p99_ms <= BUDGET_MS ? 'ok' : 'warn');
+    const sr = m.success_rate == null ? '–' : `${(m.success_rate * 100).toFixed(0)}%`;
+    return `<section class="card"><h2>${model}</h2><div class="stats">
+      <div class="stat"><div class="v">${sr}</div><div class="l">成功率（${m.episodes} 回合）</div></div>
+      <div class="stat"><div class="v">${fmt(m.relay_p50_ms)}</div><div class="l">p50 延迟 ms</div></div>
+      <div class="stat"><div class="v ${p99Class}">${fmt(m.relay_p99_ms)}</div><div class="l">p99 延迟 ms</div></div>
+      <div class="stat"><div class="v">${fmt(rps, 1)}</div><div class="l">吞吐 请求/秒（累计 ${m.requests}）</div></div>
+      <div class="stat"><div class="v">${m.active_sessions}</div><div class="l">在线机器人</div></div>
+      <div class="stat"><div class="v ${m.errors ? 'warn' : ''}">${m.errors}</div><div class="l">错误</div></div>
+    </div>${sparkline(history[model])}
+    <div class="legend">蓝线：p50 延迟走势 · 红虚线：${BUDGET_MS}ms 预算</div></section>`;
+  }).join('');
+}
+
+async function tick() {
+  if (!keyInput.value) return;
+  try {
+    const res = await fetch('/metrics', { headers: { Authorization: `Api-Key ${keyInput.value}` } });
+    if (!res.ok) { statusEl.textContent = res.status === 401 ? 'API Key 无效' : `错误 ${res.status}`; return; }
+    render(await res.json());
+    statusEl.textContent = `更新于 ${new Date().toLocaleTimeString()}`;
+  } catch (e) {
+    statusEl.textContent = '网关无法连接';
+  }
+}
+setInterval(tick, 1000);
+tick();
+</script>
+</body>
+</html>
