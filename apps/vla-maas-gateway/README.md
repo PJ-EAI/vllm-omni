@@ -22,17 +22,20 @@ backend times out (`request_timeout_s`).
 ## One-command demo
 
 ```bash
-bash apps/vla-maas-gateway/run_demo.sh 10   # episodes per task
+bash apps/vla-maas-gateway/run_demo.sh 8 60           # robots per model, seconds
+MODE=serial bash apps/vla-maas-gateway/run_demo.sh 8 60
 ```
 
 The script uses `python3`; set `PYTHON=/path/to/python` to use an interpreter
 from a virtualenv instead.
 
-Starts two mock backends (`pi05` at 60 ms, `internvla_a1` at 90 ms), the gateway,
-and a mock-LIBERO client per model at 50 Hz. Open `http://localhost:9000/dashboard`
-and enter the API key (`dev-key-change-me`) to watch success rate, p50/p99 relay
-latency against the 100 ms budget, requests, sessions and errors per model.
-Clients run with `--report-episodes`, which sends
+Starts two mock backends (`pi05` at 60 ms, `internvla_a1` at 90 ms per forward),
+the gateway, and a concurrent fleet of mock robots per model (own session, own
+50 Hz loop). `MODE=batched` (default) lets each backend batch overlapping
+requests; `MODE=serial` runs them one at a time, like `Pi05Pipeline` today. Open
+`http://localhost:9000/dashboard` and enter the API key (`dev-key-change-me`) to
+watch success rate, p50/p99 relay latency against the 100 ms budget, throughput
+and online robots per model. Robots send
 `{"endpoint": "episode_result", "success": bool}` after each episode; the gateway
 counts it and does not forward it.
 

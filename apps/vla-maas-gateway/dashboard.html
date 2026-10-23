@@ -53,6 +53,7 @@ const keyInput = document.getElementById('key');
 const grid = document.getElementById('grid');
 const statusEl = document.getElementById('status');
 const history = {};
+const lastSeen = {};  // model -> {requests, t} for the throughput delta
 try { keyInput.value = localStorage.getItem('vla-maas-key') || ''; } catch (e) {}
 keyInput.addEventListener('change', () => { try { localStorage.setItem('vla-maas-key', keyInput.value); } catch (e) {} });
 
@@ -73,14 +74,17 @@ function render(metrics) {
   grid.innerHTML = Object.entries(metrics).map(([model, m]) => {
     (history[model] ||= []).push(m.relay_p50_ms ?? 0);
     if (history[model].length > HISTORY) history[model].shift();
+    const now = performance.now(), prev = lastSeen[model];
+    const rps = prev && now > prev.t ? (m.requests - prev.requests) / ((now - prev.t) / 1000) : null;
+    lastSeen[model] = { requests: m.requests, t: now };
     const p99Class = m.relay_p99_ms == null ? '' : (m.relay_p99_ms <= BUDGET_MS ? 'ok' : 'warn');
     const sr = m.success_rate == null ? '–' : `${(m.success_rate * 100).toFixed(0)}%`;
     return `<section class="card"><h2>${model}</h2><div class="stats">
       <div class="stat"><div class="v">${sr}</div><div class="l">成功率（${m.episodes} 回合）</div></div>
       <div class="stat"><div class="v">${fmt(m.relay_p50_ms)}</div><div class="l">p50 延迟 ms</div></div>
       <div class="stat"><div class="v ${p99Class}">${fmt(m.relay_p99_ms)}</div><div class="l">p99 延迟 ms</div></div>
-      <div class="stat"><div class="v">${m.requests}</div><div class="l">推理请求</div></div>
-      <div class="stat"><div class="v">${m.active_sessions}</div><div class="l">活跃会话</div></div>
+      <div class="stat"><div class="v">${fmt(rps, 1)}</div><div class="l">吞吐 请求/秒（累计 ${m.requests}）</div></div>
+      <div class="stat"><div class="v">${m.active_sessions}</div><div class="l">在线机器人</div></div>
       <div class="stat"><div class="v ${m.errors ? 'warn' : ''}">${m.errors}</div><div class="l">错误</div></div>
     </div>${sparkline(history[model])}
     <div class="legend">蓝线：p50 延迟走势 · 红虚线：${BUDGET_MS}ms 预算</div></section>`;

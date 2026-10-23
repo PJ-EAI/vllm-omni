@@ -2,18 +2,24 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 #
-# One-command CPU demo: two mock VLA backends behind the MaaS gateway, both
-# driven by mock-LIBERO clients at 50 Hz. Open http://localhost:9000/dashboard
-# and enter the API key to watch latency and success rate live.
+# One-command CPU demo: a fleet of concurrent mock robots per model, each with
+# its own session and 50 Hz control loop, all hitting two mock VLA backends
+# through the MaaS gateway. Open http://localhost:9000/dashboard and enter the
+# API key to watch latency, throughput and success rate live.
 #
-#   bash apps/vla-maas-gateway/run_demo.sh [episodes-per-task]
+#   bash apps/vla-maas-gateway/run_demo.sh [robots-per-model] [duration-s]
+# MODE=serial   backends run one request at a time (Pi05Pipeline today)
+# MODE=batched  backends batch concurrent requests (default; needs pi0.5 batching)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CLIENTS="$ROOT/examples/online_serving/vla_maas"
 GATEWAY="$ROOT/apps/vla-maas-gateway"
-EPISODES="${1:-10}"
+ROBOTS="${1:-8}"
+DURATION="${2:-60}"
+MODE="${MODE:-batched}"
 KEY="${VLA_MAAS_API_KEY:-dev-key-change-me}"
+SCALE=0.005
 LOGS="$(mktemp -d)"
 PIDS=()
 trap 'kill "${PIDS[@]}" 2>/dev/null || true' EXIT
@@ -26,27 +32,30 @@ if ! command -v "$PYTHON" >/dev/null 2>&1; then
   exit 1
 fi
 
-"$PYTHON" "$CLIENTS/mock_policy_server.py" --port 8001 --latency-ms 60 >"$LOGS/pi05.log" 2>&1 & PIDS+=($!)
-"$PYTHON" "$CLIENTS/mock_policy_server.py" --port 8002 --latency-ms 90 >"$LOGS/internvla_a1.log" 2>&1 & PIDS+=($!)
+case "$MODE" in
+  serial) BATCH=1 ;;
+  batched) BATCH=64 ;;
+  *) echo "MODE must be serial or batched" >&2; exit 1 ;;
+esac
+
+backend() {  # port, latency
+  "$PYTHON" "$CLIENTS/mock_policy_server.py" --port "$1" --latency-ms "$2" --max-batch "$BATCH" \
+    --max-wait-ms 5 --per-item-ms 4 --action-scale "$SCALE" >"$LOGS/backend-$1.log" 2>&1 &
+  PIDS+=($!)
+}
+backend 8001 60  # pi05
+backend 8002 90  # internvla_a1
 "$PYTHON" "$GATEWAY/gateway.py" --config "$GATEWAY/gateway.example.yaml" >"$LOGS/gateway.log" 2>&1 & PIDS+=($!)
 sleep 2
+echo "mode: $MODE  robots per model: $ROBOTS  duration: ${DURATION}s"
 echo "dashboard: http://localhost:9000/dashboard  (API key: $KEY)  logs: $LOGS"
 
+FLEETS=()
 for model in pi05 internvla_a1; do
-  "$PYTHON" "$CLIENTS/libero_eval.py" --mock --port 9000 --path "/v1/robot/$model/openpi" \
-    --api-key "$KEY" --report-episodes --episodes-per-task "$EPISODES" \
-    --replan-steps 20 --async-prefetch 10 --control-hz 50 \
-    --output "$LOGS/$model.json" >"$LOGS/$model.eval.log" 2>&1 &
-  PIDS+=($!)
+  "$PYTHON" "$CLIENTS/fleet_sim.py" --port 9000 --path "/v1/robot/$model/openpi" --api-key "$KEY" \
+    --robots "$ROBOTS" --procs 2 --duration-s "$DURATION" --action-scale "$SCALE" \
+    --report-episodes --label "$model" --output "$LOGS/fleet.jsonl" >"$LOGS/$model.fleet.log" 2>&1 &
+  FLEETS+=($!)
 done
-wait "${PIDS[@]:3}"
-
-for model in pi05 internvla_a1; do
-  "$PYTHON" -c "import json,sys; s=json.load(open(sys.argv[1])); print(sys.argv[2], 'success', s['success_rate'], 'p50', round(s['inference_p50_ms'],1), 'underruns', s['underruns'])" \
-    "$LOGS/$model.json" "$model"
-done
-if command -v curl >/dev/null 2>&1; then
-  echo "metrics: $(curl -s -H "Authorization: Api-Key $KEY" localhost:9000/metrics)"
-else
-  echo "metrics: curl not found; GET http://localhost:9000/metrics with Authorization: Api-Key $KEY"
-fi
+wait "${FLEETS[@]}"
+cat "$LOGS/fleet.jsonl"

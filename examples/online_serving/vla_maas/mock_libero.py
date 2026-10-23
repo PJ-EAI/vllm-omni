@@ -77,10 +77,18 @@ def world_to_pixel(xy: np.ndarray, resolution: int) -> np.ndarray:
 
 
 class MockOffScreenRenderEnv:
-    def __init__(self, camera_heights: int = 256, camera_widths: int = 256, **_: object) -> None:
+    def __init__(
+        self,
+        camera_heights: int = 256,
+        camera_widths: int = 256,
+        action_scale: float = ACTION_SCALE,
+        **_: object,
+    ) -> None:
         if camera_heights != camera_widths:
             raise ValueError("MockOffScreenRenderEnv renders square cameras only.")
         self.resolution = camera_heights
+        # Smaller steps = longer episodes; the policy server must use the same value.
+        self.action_scale = action_scale
         self._eef = np.zeros(2)
         self._goal = np.zeros(2)
         self._gripper = 0.04
@@ -100,7 +108,7 @@ class MockOffScreenRenderEnv:
         action = np.asarray(action, dtype=np.float64)
         if action.shape != (7,):
             raise ValueError(f"LIBERO actions are 7-dim, got shape {action.shape}.")
-        self._eef = np.clip(self._eef + np.clip(action[:2], -1, 1) * ACTION_SCALE, WORKSPACE_LOW, WORKSPACE_HIGH)
+        self._eef = np.clip(self._eef + np.clip(action[:2], -1, 1) * self.action_scale, WORKSPACE_LOW, WORKSPACE_HIGH)
         self._gripper = 0.0 if action[6] > 0 else 0.04
         done = bool(np.linalg.norm(self._eef - self._goal) < SUCCESS_RADIUS)
         return self._obs(), float(done), done, {}

@@ -9,6 +9,8 @@ runs the whole loop on CPU before GPUs or the LIBERO simulator are involved.
 | `vla_client.py` | OpenPI connection helpers and `AsyncChunkExecutor` (background-prefetching action queue for a fixed-rate control loop). |
 | `libero_eval.py` | Closed-loop LIBERO evaluation: success rate, inference latency, control-loop stalls. `--mock` swaps in `mock_libero`. |
 | `latency_bench.py` | Client E2E round-trip benchmark (p50/p90/p99) with synthetic observations. |
+| `fleet_sim.py` | Concurrent robot fleet: N robots, each with its own session, env and real-time 50 Hz loop; reports throughput, latency percentiles, stalls, success. |
+| `concurrency_sweep.sh` | Fleet-size sweep over three serving layouts (serial, replica-DP, dynamic batching) behind the gateway. |
 | `mock_libero.py` | Dependency-free LIBERO stand-in with the same suite/env API and observation keys, shapes and dtypes. |
 | `mock_policy_server.py` | CPU mock of the OpenPI policy endpoint with injected latency; solves `mock_libero` from pixels. |
 | `pi05_libero.yaml` | π0.5 deploy config for a LIBERO fine-tune: bfloat16, camera keys taken from the checkpoint. |
@@ -36,6 +38,25 @@ python3 latency_bench.py --port 8000 \
 The mock policy reads the goal and end effector from the agent-view pixels, so a
 non-zero success rate shows images, state and actions survive the round trip in
 the right layout.
+
+## Many robots at once
+
+A serving stack is only exercised when requests from different robots overlap.
+`fleet_sim.py` runs N robots concurrently, and the mock server shares one
+simulated accelerator across all connections:
+
+- `--max-batch 1` serves one request at a time, as `Pi05Pipeline` does today
+  (it does not declare `supports_request_batch`, so the engine requires
+  `max_num_seqs: 1`).
+- `--max-batch N --max-wait-ms W --per-item-ms P` batches whatever is queued
+  within `W` ms; a batch of B costs `latency + (B - 1) * P`.
+
+```bash
+bash concurrency_sweep.sh results.jsonl   # ROBOTS="1 2 4 8 16 32" DURATION=15 ...
+```
+
+The per-item cost and batch window are assumptions standing in for a batched
+pi0.5 forward; replace them with A800 measurements once that exists.
 
 To go through the MaaS gateway (API key, model routing, metrics), see
 [`apps/vla-maas-gateway`](../../../apps/vla-maas-gateway/README.md) and pass
