@@ -73,4 +73,29 @@ assert m["episodes"] == 4, m
 print(f"ok   eval success_rate={ev['success_rate']:.2f} p50={ev['inference_p50_ms']:.1f}ms; "
       f"gateway requests={m['requests']} relay_p50={m['relay_p50_ms']:.1f}ms")
 EOF
+# Simulated multi-arm fleet (mock envs, two groups); records MP4s when imageio is present.
+VIDEO_ARGS=()
+if "$PYTHON" -c "import imageio, imageio_ffmpeg" 2>/dev/null; then
+  VIDEO_ARGS=(--video-dir "$OUT_DIR/videos" --record-episodes 1)
+fi
+cat >"$OUT_DIR/scenario.yaml" <<'YAML'
+defaults: {control_hz: 50, replan_steps: 25, async_prefetch: 10, start_jitter_s: 0.5}
+groups:
+  - {name: panda-mock, model: pi05, robots: 2, env: {kind: mock, robot: Panda, resolution: 128}}
+  - {name: ur5e-mock, model: pi05, robots: 1, env: {kind: mock, robot: UR5e, resolution: 128}}
+YAML
+"$PYTHON" "$CLIENTS/sim_fleet.py" --scenario "$OUT_DIR/scenario.yaml" --port "$GW_PORT" --api-key "$KEY" \
+  --duration-s 4 --output "$OUT_DIR/sim_fleet.jsonl" "${VIDEO_ARGS[@]}" >"$OUT_DIR/sim_fleet.log" 2>&1 \
+  || fail "sim_fleet through the gateway failed"
+"$PYTHON" - "$OUT_DIR/sim_fleet.jsonl" "${#VIDEO_ARGS[@]}" <<'EOF' || fail "sim_fleet checks failed"
+import json, sys
+rows = {r["group"]: r for r in map(json.loads, open(sys.argv[1]))}
+assert set(rows) == {"panda-mock", "ur5e-mock", "all"}, rows
+assert rows["all"]["errors"] == 0 and rows["all"]["episodes"] > 0, rows["all"]
+assert rows["all"]["success_rate"] > 0, rows["all"]
+if int(sys.argv[2]):
+    assert rows["all"]["videos"] == 3, rows["all"]
+print(f"ok   sim_fleet episodes={rows['all']['episodes']} success_rate={rows['all']['success_rate']} "
+      f"videos={rows['all']['videos']}")
+EOF
 echo "PASS (artifacts: $OUT_DIR)"

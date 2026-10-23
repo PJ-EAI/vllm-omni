@@ -75,7 +75,7 @@ class MockPolicy:
         goal, eef = _centroid(image, GOAL_RGB), _centroid(image, EEF_RGB)
         chunk[:, 6] = -1.0  # gripper open
         if goal is None or eef is None:
-            return chunk
+            return self._idle_chunk(chunk)
         # Pixels -> metres, then a saturating proportional step per action.
         metres_per_px = (WORKSPACE_HIGH - WORKSPACE_LOW) / (image.shape[0] - 1)
         remaining = (goal - eef) * metres_per_px
@@ -83,6 +83,19 @@ class MockPolicy:
             step = np.clip(remaining / self.args.action_scale, -1.0, 1.0)
             chunk[t, :2] = step
             remaining = remaining - step * self.args.action_scale
+        return chunk
+
+    def _idle_chunk(self, chunk: np.ndarray) -> np.ndarray:
+        """Not a mock_libero scene (e.g. robosuite): sweep the arm so videos show
+        that actions reach every robot. Zero motion unless ``--idle-motion`` > 0."""
+        if self.args.idle_motion <= 0:
+            return chunk
+        t = time.time() + np.arange(self.args.action_horizon) * 0.05
+        chunk[:, 0] = np.sin(t * 1.3)
+        chunk[:, 1] = np.sin(t * 0.9 + 1.0)
+        chunk[:, 2] = 0.5 * np.sin(t * 0.7 + 2.0)
+        chunk[:, :3] *= self.args.idle_motion
+        chunk[:, 6] = np.where(np.sin(t * 0.5) > 0, 1.0, -1.0)
         return chunk
 
     def batch_latency_s(self, batch_size: int) -> float:
@@ -173,6 +186,12 @@ def main() -> int:
     parser.add_argument("--action-horizon", type=int, default=50)
     parser.add_argument("--max-action-dim", type=int, default=32)
     parser.add_argument("--base-camera-key", default="observation.images.image")
+    parser.add_argument(
+        "--idle-motion",
+        type=float,
+        default=0.0,
+        help="Delta-action amplitude of a slow sweep returned for non-mock scenes (robosuite/LIBERO); 0 = hold still.",
+    )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")

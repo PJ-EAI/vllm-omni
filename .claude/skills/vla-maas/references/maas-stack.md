@@ -76,6 +76,10 @@ All take `--host --port --path --api-key`. Direct to a server:
 | `latency_bench.py` | `--cameras --state-dim --image-size --num-inference-steps --warmup --iters --output` | JSON latency percentiles vs control budget |
 | `concurrency_sweep.sh` | env `ROBOTS DURATION LATENCY_MS PER_ITEM_MS REPLICAS PYTHON` | JSONL over serial / replicas-N / batched |
 | `mock_libero.py` | — | Dependency-free LIBERO stand-in |
+| `sim_fleet.py` | `--scenario --duration-s --episodes --render-gpus --video-dir --video-grid --record-episodes --output --episodes-out` | JSONL per group + `all`: fleet_sim fields plus `group, model, env, task, robot, sim_step_p50_ms, videos, errors`; per-episode JSONL; MP4s |
+| `sim_envs.py` | scenario `env: {kind: libero\|robosuite\|mock, robot, task, suite, task_ids, resolution, max_steps, video_camera}` | Simulator adapters, same obs layout as `libero_eval.py` |
+| `video_grid.py` | `<video_dir> --cols --max-clips` | Grid MP4 of a run's clips |
+| `sim_fleet_demo.sh` | env `GATEWAY_CONFIG MUJOCO_GL RENDER_GPUS OUT_DIR GW_PORT` | mock backends (or yours) + gateway + `sim_fleet.py` |
 
 `--action-scale` must match between `mock_policy_server.py` and the mock env
 (`fleet_sim.py --action-scale`), otherwise mock success drops.

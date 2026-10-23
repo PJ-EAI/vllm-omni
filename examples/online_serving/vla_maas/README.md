@@ -13,6 +13,10 @@ runs the whole loop on CPU before GPUs or the LIBERO simulator are involved.
 | `concurrency_sweep.sh` | Fleet-size sweep over three serving layouts (serial, replica-DP, dynamic batching) behind the gateway. |
 | `mock_libero.py` | Dependency-free LIBERO stand-in with the same suite/env API and observation keys, shapes and dtypes. |
 | `mock_policy_server.py` | CPU mock of the OpenPI policy endpoint with injected latency; solves `mock_libero` from pixels. |
+| `sim_fleet.py` | Simulated multi-arm fleet from a scenario YAML: one process per robot (LIBERO, robosuite or mock), random boot offsets and idle gaps, per-group metrics, headless MP4 per episode. |
+| `sim_envs.py` | Simulator adapters (LIBERO Panda, robosuite Panda/UR5e/Sawyer/Kinova3/IIWA/Jaco, mock) behind one observation/action interface. |
+| `video_recorder.py`, `video_grid.py` | Streaming captioned MP4 per episode; tile a run's clips into one grid video. |
+| `sim_fleet_demo.sh`, `scenarios/` | Mock backends + gateway + `sim_fleet.py` in one command; example scenarios. |
 | `pi05_libero.yaml` | π0.5 deploy config for a LIBERO fine-tune: bfloat16, camera keys taken from the checkpoint, request batching (`max_num_seqs: 16`). |
 
 Install the client extras: `pip install websockets msgpack msgpack-numpy` and
@@ -96,6 +100,99 @@ python3 libero_eval.py --port 8000 --task-suite libero_spatial --episodes-per-ta
 
 Camera keys must match the checkpoint's `input_features`. `pi05_libero.yaml`
 leaves `image_feature_keys` unset so the server derives them from the checkpoint.
+
+## Simulated multi-arm fleet (robosuite / LIBERO)
+
+`sim_fleet.py` replaces the mock env with real MuJoCo simulators and mixes arm
+types and models in one run. A scenario lists robot groups:
+
+```yaml
+defaults:
+  control_hz: 20            # robosuite / LIBERO controller rate
+  replan_steps: 5
+  start_jitter_s: 3.0       # robots boot at uniform(0, 3) s
+  think_time_s: [0.5, 2.0]  # idle between episodes, like a user resetting a task
+  record_episodes: 1        # first N episodes of every robot -> mp4
+  report_episodes: true     # success counters on the gateway dashboard
+groups:
+  - name: panda-libero
+    model: pi05             # gateway route /v1/robot/pi05/openpi (or `path:`)
+    robots: 8
+    env: {kind: libero, suite: libero_spatial}
+  - name: ur5e-lift
+    model: pi05
+    robots: 4
+    env: {kind: robosuite, robot: UR5e, task: Lift, max_steps: 300, video_camera: frontview}
+```
+
+Every robot is a separate process with its own simulator and session. All
+robots build their scenes first, then the measured window of `--duration-s`
+starts; robots finish the episode in progress when it ends. Group options
+override `defaults`; `env` keys are `kind, robot, task, suite, task_ids,
+resolution, max_steps, control_freq, video_camera`.
+
+What the success rate means: only Panda on LIBERO matches a π0.5 LIBERO
+fine-tune. Other arms and robosuite tasks exercise the service with real
+renders and a real control loop; their success rate says nothing about the
+policy until a checkpoint is trained for that arm.
+
+### Install
+
+```bash
+# robosuite only (any Python >= 3.10):
+pip install "robosuite>=1.5" "mujoco>=3.3,<3.4" imageio imageio-ffmpeg pillow pyyaml
+# LIBERO + robosuite (LIBERO pins robosuite 1.4.x; sim_envs.py handles both APIs):
+git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git
+pip install "robosuite==1.4.1" "mujoco==3.2.3" "bddl==1.0.1" "numpy<2" easydict "gym==0.25.2" \
+    future matplotlib torch imageio imageio-ffmpeg pillow pyyaml
+export PYTHONPATH=$PWD/LIBERO:$PYTHONPATH
+```
+
+LIBERO asks for its data paths on first import; write `~/.libero/config.yaml`
+(`benchmark_root, bddl_files, init_states, datasets, assets`, pointing into
+`LIBERO/libero/libero`) beforehand in batch jobs. robosuite 1.5 fails on
+MuJoCo 3.4+, hence the pin.
+
+### Headless rendering and video on A100 / A800
+
+MuJoCo renders offscreen through EGL with the NVIDIA driver; no X server or
+display is needed (A100/A800 have no display outputs, and none is required).
+
+```bash
+export MUJOCO_GL=egl            # default in sim_envs.py; osmesa on CPU-only hosts
+python3 sim_fleet.py --scenario scenarios/sim_fleet_robosuite.yaml --port 9000 \
+    --api-key dev-key-change-me --duration-s 300 --render-gpus 0,1,2,3 \
+    --video-dir out/videos --video-grid --output out/summary.jsonl --episodes-out out/episodes.jsonl
+```
+
+- `--render-gpus` takes EGL device ids (physical GPU order) and spreads robots
+  over them round-robin. The sim processes do no CUDA work and drop
+  `CUDA_VISIBLE_DEVICES`, so they can share GPUs with `vllm serve`.
+- In containers, the NVIDIA runtime must expose graphics:
+  `NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics` (otherwise EGL finds no
+  device), plus `libegl1` in the image.
+- Videos: `out/videos/<group>/r<robot>_ep<n>_<success|fail>.mp4`, captioned with
+  arm, model, step and last inference latency, H.264/yuv420p (plays in
+  browsers). `--video-grid` adds `out/videos/grid.mp4` with one clip per group
+  first. `video_camera: frontview` shows the whole arm instead of the policy's
+  agent view. `video_stride` in the scenario thins frames for long runs.
+- `sim_step_p50_ms` in the summary is simulator + render time per step. When it
+  approaches `1000 / control_hz`, `late_tick_pct` reflects the simulator, not
+  the service; add CPU cores or lower the resolution.
+
+### One command
+
+```bash
+# CPU mock backends that sweep the arms, gateway, robosuite fleet, videos:
+bash sim_fleet_demo.sh scenarios/sim_fleet_robosuite.yaml 120
+# Real models: start vllm serve, point a gateway yaml at it, then
+GATEWAY_CONFIG=my_gateway.yaml RENDER_GPUS=0,1 bash sim_fleet_demo.sh scenarios/sim_fleet_libero_mixed.yaml 600
+# Anywhere, no simulator: MUJOCO_GL is unused by the mock scenario.
+bash sim_fleet_demo.sh scenarios/sim_fleet_mock.yaml 30
+```
+
+`mock_policy_server.py --idle-motion A` returns a slow sweep for non-mock
+scenes so the videos confirm actions reach every arm; it is not a policy.
 
 ## Latency budget
 
