@@ -128,7 +128,7 @@ class GpuWorker:
                     break
                 try:
                     batch.append(await asyncio.wait_for(self.queue.get(), max(timeout, 0)))
-                except TimeoutError:
+                except asyncio.TimeoutError:
                     break
             start = time.perf_counter()
             results = []
