@@ -32,7 +32,7 @@ from a virtualenv instead.
 Starts two mock backends (`pi05` at 60 ms, `internvla_a1` at 90 ms per forward),
 the gateway, and a concurrent fleet of mock robots per model (own session, own
 50 Hz loop). `MODE=batched` (default) lets each backend batch overlapping
-requests; `MODE=serial` runs them one at a time, like `Pi05Pipeline` today. Open
+requests; `MODE=serial` runs them one at a time, like a replica with `max_num_seqs: 1`. Open
 `http://localhost:9000/dashboard` and enter the API key (`dev-key-change-me`) to
 watch success rate, p50/p99 relay latency against the 100 ms budget, throughput
 and online robots per model. Robots send

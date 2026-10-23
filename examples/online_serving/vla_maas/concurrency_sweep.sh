@@ -4,9 +4,9 @@
 #
 # Sweep robot-fleet size against three serving layouts, all behind the MaaS
 # gateway and all on CPU mocks with the same per-forward cost:
-#   serial      1 backend,  max_batch 1   (Pi05Pipeline today: max_num_seqs 1)
+#   serial      1 backend,  max_batch 1   (max_num_seqs: 1)
 #   replicas    N backends, max_batch 1   (replica data parallel, one GPU each)
-#   batched     1 backend,  dynamic batching (needs supports_request_batch)
+#   batched     1 backend,  dynamic batching (Pi05Pipeline with max_num_seqs > 1)
 #
 #   bash concurrency_sweep.sh [out.jsonl]
 # Env overrides: ROBOTS="1 2 4 8 16 32" DURATION=15 LATENCY_MS=60 PER_ITEM_MS=4 REPLICAS=4

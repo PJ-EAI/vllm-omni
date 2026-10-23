@@ -8,8 +8,8 @@
 # API key to watch latency, throughput and success rate live.
 #
 #   bash apps/vla-maas-gateway/run_demo.sh [robots-per-model] [duration-s]
-# MODE=serial   backends run one request at a time (Pi05Pipeline today)
-# MODE=batched  backends batch concurrent requests (default; needs pi0.5 batching)
+# MODE=serial   backends run one request at a time (max_num_seqs: 1)
+# MODE=batched  backends batch concurrent requests (default; max_num_seqs > 1)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

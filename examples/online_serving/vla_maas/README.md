@@ -13,7 +13,7 @@ runs the whole loop on CPU before GPUs or the LIBERO simulator are involved.
 | `concurrency_sweep.sh` | Fleet-size sweep over three serving layouts (serial, replica-DP, dynamic batching) behind the gateway. |
 | `mock_libero.py` | Dependency-free LIBERO stand-in with the same suite/env API and observation keys, shapes and dtypes. |
 | `mock_policy_server.py` | CPU mock of the OpenPI policy endpoint with injected latency; solves `mock_libero` from pixels. |
-| `pi05_libero.yaml` | π0.5 deploy config for a LIBERO fine-tune: bfloat16, camera keys taken from the checkpoint. |
+| `pi05_libero.yaml` | π0.5 deploy config for a LIBERO fine-tune: bfloat16, camera keys taken from the checkpoint, request batching (`max_num_seqs: 16`). |
 
 Install the client extras: `pip install websockets msgpack msgpack-numpy` and
 `openpi-client` (`pip install --no-deps -e packages/openpi-client` from the
@@ -45,9 +45,8 @@ A serving stack is only exercised when requests from different robots overlap.
 `fleet_sim.py` runs N robots concurrently, and the mock server shares one
 simulated accelerator across all connections:
 
-- `--max-batch 1` serves one request at a time, as `Pi05Pipeline` does today
-  (it does not declare `supports_request_batch`, so the engine requires
-  `max_num_seqs: 1`).
+- `--max-batch 1` serves one request at a time, like a replica deployed with
+  `max_num_seqs: 1`.
 - `--max-batch N --max-wait-ms W --per-item-ms P` batches whatever is queued
   within `W` ms; a batch of B costs `latency + (B - 1) * P`.
 
@@ -56,7 +55,7 @@ bash concurrency_sweep.sh results.jsonl   # ROBOTS="1 2 4 8 16 32" DURATION=15 .
 ```
 
 The per-item cost and batch window are assumptions standing in for a batched
-pi0.5 forward; replace them with A800 measurements once that exists.
+pi0.5 forward; replace them with GPU measurements (below).
 
 ### Measuring it on a GPU
 

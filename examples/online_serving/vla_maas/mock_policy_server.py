@@ -12,8 +12,8 @@ for the GPU forward pass.
 
 All connections share ONE simulated GPU worker, so concurrent robots contend
 for it the way they would for a single vllm-omni replica:
-  * ``--max-batch 1`` (default): requests run one at a time, like Pi05Pipeline
-    today (no ``supports_request_batch``, so ``max_num_seqs: 1``).
+  * ``--max-batch 1`` (default): requests run one at a time, like a replica
+    deployed with ``max_num_seqs: 1``.
   * ``--max-batch N``: dynamic batching like vllm-omni request batching; the
     worker waits up to ``--max-wait-ms`` after the first queued request, runs up
     to N together, and a batch of B takes ``latency + (B - 1) * per-item``.
@@ -164,7 +164,7 @@ def main() -> int:
     parser.add_argument("--path", default=DEFAULT_PATH)
     parser.add_argument("--latency-ms", type=float, default=80.0)
     parser.add_argument("--jitter-ms", type=float, default=10.0)
-    parser.add_argument("--max-batch", type=int, default=1, help="1 = serial, like Pi05Pipeline today.")
+    parser.add_argument("--max-batch", type=int, default=1, help="1 = serial, like max_num_seqs: 1.")
     parser.add_argument("--max-wait-ms", type=float, default=5.0, help="Batch collection window.")
     parser.add_argument("--per-item-ms", type=float, default=4.0, help="Added latency per extra batch item.")
     parser.add_argument(
