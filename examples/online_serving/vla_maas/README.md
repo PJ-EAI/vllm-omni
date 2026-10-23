@@ -58,6 +58,28 @@ bash concurrency_sweep.sh results.jsonl   # ROBOTS="1 2 4 8 16 32" DURATION=15 .
 The per-item cost and batch window are assumptions standing in for a batched
 pi0.5 forward; replace them with A800 measurements once that exists.
 
+### Measuring it on a GPU
+
+`Pi05Pipeline` declares `supports_request_batch`, so one replica batches
+concurrent sessions up to `max_num_seqs` (16 in `pi05_libero.yaml`). Compare
+serial and batched serving with the same fleet (the mock env only generates
+load here; its success rate is meaningless against a real checkpoint):
+
+```bash
+# batched (as shipped); for serial, set max_num_seqs: 1 in the yaml
+vllm serve /path/to/pi05_libero_checkpoint --omni --port 8000 \
+    --deploy-config examples/online_serving/vla_maas/pi05_libero.yaml --enforce-eager
+
+for n in 1 2 4 8 16 32; do
+  python3 fleet_sim.py --port 8000 --robots $n --duration-s 30 --label batched \
+      --base-camera-key <checkpoint base camera key> \
+      --wrist-camera-key <checkpoint wrist camera key> --output gpu_sweep.jsonl
+done
+```
+
+`--request-batch-max-wait-ms` on `vllm serve` trades first-request latency for
+fuller batches; the default 0 batches whatever queued while the GPU was busy.
+
 To go through the MaaS gateway (API key, model routing, metrics), see
 [`apps/vla-maas-gateway`](../../../apps/vla-maas-gateway/README.md) and pass
 `--path /v1/robot/<model>/openpi --api-key <key>` to either client.

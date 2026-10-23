@@ -384,6 +384,90 @@ def test_pipeline_crops_actions_to_checkpoint_output_schema(monkeypatch):
     assert result.output["actions"].shape == (config.chunk_size, 7)
 
 
+class _RowTaggingActionModel:
+    """Returns, for each batch row, a chunk filled with that row's first token,
+    so a test can tell which request each output row came from."""
+
+    def __init__(self, chunk_size: int, max_action_dim: int):
+        self._chunk = (chunk_size, max_action_dim)
+        self.calls: list[tuple[int, int | None, Any]] = []
+
+    def sample_actions(self, *, lang_tokens, num_steps, generator, **kwargs):
+        del kwargs
+        self.calls.append((lang_tokens.shape[0], num_steps, generator))
+        return lang_tokens[:, :1, None].float().expand(-1, *self._chunk).clone()
+
+
+def test_pipeline_batches_concurrent_requests(monkeypatch):
+    """Concurrent robot requests share one sample_actions call per step count,
+    each output row returns to its own request, and a bad observation fails
+    alone instead of taking its batch peers down with it."""
+    from vllm_omni.diffusion.data import DiffusionOutput
+    from vllm_omni.diffusion.models.pi05 import pipeline_pi05
+    from vllm_omni.diffusion.request import OmniDiffusionRequest
+    from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
+    from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+
+    assert pipeline_pi05.Pi05Pipeline.supports_request_batch is True
+    config = Pi05Config.from_model_config(
+        dict(_LEROBOT_CFG, output_features={"action": {"type": "ACTION", "shape": [7]}})
+    )
+    pipeline = object.__new__(pipeline_pi05.Pi05Pipeline)
+    pipeline.config = config
+    pipeline._device = torch.device("cpu")
+    pipeline.processor = Pi05Processor(config, object(), torch.device("cpu"))
+    pipeline.model = _RowTaggingActionModel(config.chunk_size, config.max_action_dim)
+
+    def build_model_inputs(robot_obs):
+        if robot_obs.get("bad"):
+            raise ValueError("π0.5 observation must provide at least one configured camera image.")
+        return (
+            [torch.zeros(1, 3, 1, 1)],
+            [torch.ones(1, dtype=torch.bool)],
+            torch.tensor([[robot_obs["tag"]]]),
+            torch.ones(1, 1, dtype=torch.bool),
+        )
+
+    monkeypatch.setattr(pipeline.processor, "build_model_inputs", build_model_inputs)
+    seeded = torch.Generator().manual_seed(0)
+
+    def request(request_id, robot_obs, *, steps=None, generator=None):
+        params = OmniDiffusionSamplingParams(extra_args={} if robot_obs is None else {"robot_obs": robot_obs})
+        params.num_inference_steps = steps
+        params.generator = generator
+        return OmniDiffusionRequest(prompt="", sampling_params=params, request_id=request_id)
+
+    state = np.zeros(config.max_state_dim)
+    batch = DiffusionRequestBatch(
+        requests=[
+            request("a", {"tag": 1, "state": state}, generator=seeded),
+            request("b", {"tag": 2, "state": state}, steps=4),
+            request("c", {"bad": True, "state": state}),
+            request("d", {"tag": 4, "state": state}),
+            request("e", None),
+        ]
+    )
+
+    outputs = pipeline.forward(batch)
+
+    assert isinstance(outputs, list) and len(outputs) == 5
+    assert all(isinstance(output, DiffusionOutput) for output in outputs)
+    for index, tag in ((0, 1), (1, 2), (3, 4)):
+        assert outputs[index].error is None
+        assert outputs[index].output["actions"].shape == (config.chunk_size, 7)
+        assert np.all(outputs[index].output["actions"] == tag)
+    assert "camera" in outputs[2].error
+    assert "robot_obs" in outputs[4].error
+
+    calls = {steps: (rows, generator) for rows, steps, generator in pipeline.model.calls}
+    assert set(calls) == {None, 4}
+    rows, generators = calls[None]
+    assert rows == 2
+    # The seeded request keeps its own generator; the unseeded peer gets its own.
+    assert len(generators) == 2 and generators[0] is seeded and generators[1] is not seeded
+    assert calls[4] == (1, None)
+
+
 def test_load_lerobot_norm_stats_unknown_mode_raises(tmp_path):
     """Fail loud: an unreproducible mode served anyway is silently wrong."""
     path = _write_lerobot_checkpoint(
@@ -1105,3 +1189,44 @@ def test_request_denoising_steps_must_be_a_positive_integer(bad):
     with pytest.raises(ValueError, match="num_inference_steps must be a positive integer"):
         _spy_pipeline(spy).forward(_spy_request(bad))
     assert spy.seen == []
+
+
+@pytest.mark.slow
+def test_batched_sample_actions_match_per_request(tiny_model):
+    """Batching concurrent robots must not change any robot's actions: each row
+    of a batched denoise equals that request denoised alone with the same seed,
+    despite different prompt lengths and camera masks across the batch."""
+    torch.manual_seed(0)
+    batch, seq_len, seeds = 3, 16, (11, 22, 33)
+    images = [torch.rand(batch, 3, 224, 224) * 2 - 1 for _ in range(3)]
+    image_masks = [
+        torch.tensor([True, True, True]),
+        torch.tensor([True, False, True]),
+        torch.tensor([False, True, True]),
+    ]
+    lang_tokens = torch.randint(0, 1000, (batch, seq_len))
+    lang_masks = torch.zeros(batch, seq_len, dtype=torch.bool)
+    for row, length in enumerate((5, 11, 16)):
+        lang_masks[row, :length] = True
+
+    batched = tiny_model.sample_actions(
+        images=images,
+        image_masks=image_masks,
+        lang_tokens=lang_tokens,
+        lang_masks=lang_masks,
+        num_steps=2,
+        generator=[torch.Generator().manual_seed(seed) for seed in seeds],
+    )
+
+    for row, seed in enumerate(seeds):
+        alone = tiny_model.sample_actions(
+            images=[image[row : row + 1] for image in images],
+            image_masks=[mask[row : row + 1] for mask in image_masks],
+            lang_tokens=lang_tokens[row : row + 1],
+            lang_masks=lang_masks[row : row + 1],
+            num_steps=2,
+            generator=torch.Generator().manual_seed(seed),
+        )
+        assert torch.allclose(batched[row : row + 1], alone, atol=1e-5), (
+            f"row {row} diverges when batched; max_diff={(batched[row : row + 1] - alone).abs().max().item():.2e}"
+        )
