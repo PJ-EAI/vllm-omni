@@ -1,0 +1,21 @@
+# CPU-only scenario: mock LIBERO envs (no simulator) labelled as two arm types,
+# routed to the two models of apps/vla-maas-gateway/gateway.example.yaml.
+# Exercises the fleet client, gateway routing and video recording anywhere.
+defaults:
+  control_hz: 50
+  replan_steps: 25
+  async_prefetch: 10
+  start_jitter_s: 1.0
+  think_time_s: [0.2, 1.0]
+  record_episodes: 1
+  report_episodes: true
+
+groups:
+  - name: panda-mock
+    model: pi05
+    robots: 3
+    env: {kind: mock, robot: Panda, suite: libero_spatial, resolution: 128}
+  - name: ur5e-mock
+    model: internvla_a1
+    robots: 2
+    env: {kind: mock, robot: UR5e, suite: libero_spatial, resolution: 128}

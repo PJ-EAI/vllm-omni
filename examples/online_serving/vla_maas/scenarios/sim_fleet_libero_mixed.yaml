@@ -1,0 +1,25 @@
+# Real LIBERO (Franka Panda, where a pi0.5 LIBERO fine-tune has a meaningful
+# success rate) next to other arms in robosuite. LIBERO pins robosuite 1.4.x;
+# sim_envs.py supports both the 1.4 and 1.5 controller APIs.
+defaults:
+  control_hz: 20
+  replan_steps: 5
+  async_prefetch: 0
+  start_jitter_s: 3.0
+  think_time_s: [0.5, 2.0]
+  record_episodes: 2
+  report_episodes: true
+
+groups:
+  - name: panda-libero-spatial
+    model: pi05
+    robots: 8
+    env: {kind: libero, robot: Panda, suite: libero_spatial}
+  - name: ur5e-lift
+    model: pi05
+    robots: 4
+    env: {kind: robosuite, robot: UR5e, task: Lift, max_steps: 300, video_camera: frontview}
+  - name: sawyer-lift
+    model: internvla_a1
+    robots: 4
+    env: {kind: robosuite, robot: Sawyer, task: Lift, max_steps: 300, video_camera: frontview}

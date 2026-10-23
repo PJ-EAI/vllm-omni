@@ -161,7 +161,7 @@ class Gateway:
                     try:
                         await upstream.send(frame)
                         reply = await asyncio.wait_for(upstream.recv(), self.request_timeout_s)
-                    except (TimeoutError, ConnectionClosed) as exc:
+                    except (asyncio.TimeoutError, ConnectionClosed) as exc:
                         stats.errors += 1
                         await client.send(packer.pack({"type": "error", "message": f"backend failed: {exc!r}"}))
                         return
