@@ -1,0 +1,30 @@
+# robosuite only (pip install robosuite): four arm types on two tasks, sharing
+# the pi05 route plus a second model. Only Panda matches a LIBERO fine-tune;
+# the other arms load the service with real renders, their success rate says
+# nothing about the policy.
+defaults:
+  control_hz: 20            # robosuite/LIBERO controller rate
+  replan_steps: 5           # OpenPI LIBERO protocol
+  async_prefetch: 0
+  start_jitter_s: 3.0       # robots boot at uniform(0, 3) s
+  think_time_s: [0.5, 2.0]  # idle between episodes, like a user resetting a task
+  record_episodes: 1        # first episode of every robot -> mp4
+  report_episodes: true     # success counters on the gateway dashboard
+
+groups:
+  - name: panda-lift
+    model: pi05
+    robots: 4
+    env: {kind: robosuite, robot: Panda, task: Lift, max_steps: 300, video_camera: frontview}
+  - name: ur5e-lift
+    model: pi05
+    robots: 4
+    env: {kind: robosuite, robot: UR5e, task: Lift, max_steps: 300, video_camera: frontview}
+  - name: sawyer-stack
+    model: internvla_a1
+    robots: 2
+    env: {kind: robosuite, robot: Sawyer, task: Stack, max_steps: 300, video_camera: frontview}
+  - name: kinova3-pickplace
+    model: internvla_a1
+    robots: 2
+    env: {kind: robosuite, robot: Kinova3, task: PickPlaceCan, max_steps: 300, video_camera: frontview}

@@ -8,8 +8,10 @@ have moved.
 
 | Layer | Owns | Files |
 | --- | --- | --- |
-| Client | Observation building, control loop, async prefetch | `examples/online_serving/vla_maas/{vla_client,libero_eval,fleet_sim,latency_bench}.py`, `apps/vla-maas-studio/` (browser console) |
-| MaaS gateway | API keys, model → backend routing, relay, metrics, dashboard | `apps/vla-maas-gateway/{gateway.py,dashboard.html,gateway.example.yaml}` |
+| Robot protocol | Model-agnostic messages, vocabulary, codec, version (`maas-robot/1`) | `packages/vla-maas-protocol/` (spec in `spec/robot_protocol.md`) |
+| Robot client | Drivers, cameras, safety filter, tick-aligned control loop, `robotctl`; installs without vllm/torch | `packages/vla-maas-robot/` |
+| Client | Observation building, control loop, async prefetch | `examples/online_serving/vla_maas/{vla_client,libero_eval,fleet_sim,latency_bench}.py`; simulators and video: `{sim_envs,sim_fleet,video_recorder,video_grid}.py`; `apps/vla-maas-studio/` (browser console) |
+| MaaS gateway | Operator and per-robot keys, model → backend routing, `/act` translation through model adapters, OpenPI relay, metrics, dashboard | `apps/vla-maas-gateway/{gateway.py,model_adapters.py,dashboard.html,gateway.example.yaml}` |
 | CLI | `vllm serve ... --omni` flags (`--deploy-config`, `--request-batch-max-wait-ms`, `--robot-openpi-idle-timeout`) | `vllm_omni/entrypoints/cli/serve.py` |
 | HTTP/WS app | Routes, `/health`, `/v1/models`, `WS /v1/realtime/robot/openpi` | `vllm_omni/entrypoints/openai/api_server.py` |
 | OpenPI protocol | Handshake, msgpack-numpy codec, reset, idle timeout, session ids | `vllm_omni/entrypoints/openpi/connection.py` |
@@ -72,5 +74,17 @@ before enabling it.
 | New auth, quotas, tenants, routing policy, failover | `apps/vla-maas-gateway/gateway.py` (+ README "Not yet covered") |
 | New client workload or benchmark | `examples/online_serving/vla_maas/` |
 | New VLA model | `vllm_omni/diffusion/models/<m>/`, registry entry, `<m>_pipeline_config.py`, `vllm_omni/deploy/<m>.yaml`, recipe; see the `add-diffusion-model` skill |
-| Protocol change visible to robots | `entrypoints/openpi/` plus `docs/serving/openpi_api.md` |
+| Robot-protocol change | `packages/vla-maas-protocol/` (spec + schema + version bump if breaking); keep the previous major accepted |
+| New real arm | `packages/vla-maas-robot/vla_maas_robot/drivers/<arm>.py`, register in `driver.DRIVERS`, a `robots/<arm>.yaml`, an extra for its SDK |
+| A model on `/act` | `adapter:` under the model in the gateway yaml; a new `kind` in `model_adapters.ADAPTERS` only when the native output is not one action array |
+| Native OpenPI change | `entrypoints/openpi/` plus `docs/serving/openpi_api.md` |
 | Non-policy level (planner, world model) | New endpoint family under `vllm_omni/entrypoints/`, gateway route, orchestration in `apps/` |
+
+## Decoupling rules (robot side vs cloud side)
+
+- `vla-maas-robot` imports only `vla_maas_protocol` and its own modules; never
+  `vllm`, `vllm_omni`, `torch` or the gateway. CI (`.github/workflows/vla-maas.yml`)
+  runs its tests in an environment with only those two packages.
+- The gateway imports `vla_maas_protocol`, never `vla_maas_robot` (tests may).
+- Robots and the gateway share no config; a robot yaml names only the gateway
+  route (`gateway.model`). Model keys live in the gateway's `adapter` blocks.

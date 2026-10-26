@@ -34,10 +34,11 @@ and use `vllm-omni-test` when adding tests, `precheck-pr` before a PR.
 ## The stack in one picture
 
 ```text
-robot / fleet_sim / libero_eval  (openpi-client, msgpack-numpy over websocket)
-        │  ws://gw:9000/v1/robot/<model>/openpi   Authorization: Api-Key <k>
-        ▼
-apps/vla-maas-gateway/gateway.py   auth · least-loaded routing · relay · /metrics · /dashboard
+real robot (packages/vla-maas-robot, robotctl)      fleet_sim / libero_eval (openpi-client)
+  │  wss://gw/v1/robot/<model>/act?robot_id=..       │  ws://gw:9000/v1/robot/<model>/openpi
+  │  standard Robot protocol (packages/vla-maas-protocol), model-agnostic
+  ▼                                                  ▼
+apps/vla-maas-gateway/gateway.py   keys · least-loaded routing · model_adapters (/act) · relay · /metrics
         │  ws://host:port/v1/realtime/robot/openpi   (one entry per backend in gateway yaml)
         ▼
 vllm serve <ckpt> --omni --deploy-config <yaml>      or  mock_policy_server.py (CPU)
@@ -80,12 +81,24 @@ vllm serve <ckpt> --omni --deploy-config <yaml>      or  mock_policy_server.py (
   live camera grid, client vs gateway latency): `bash
   apps/vla-maas-studio/run_demo.sh` → `http://127.0.0.1:19100`. Add
   `--physics libero` to `studio.py` for the real simulator; see
-  `apps/vla-maas-studio/README.md`.
+  `apps/vla-maas-studio/README.md`. For a robot file on the standard Robot
+  protocol (Piper twin or real arm): `PHYSICS=piper bash
+  apps/vla-maas-studio/run_demo.sh`, or `studio.py --robot-config <robot.yaml>
+  [--hardware]`.
+- **Simulated multi-arm fleet with video** (robosuite/LIBERO, headless EGL):
+  `bash examples/online_serving/vla_maas/sim_fleet_demo.sh <scenario.yaml> <duration-s>`
+  or `sim_fleet.py --scenario ... --render-gpus 0,1 --video-dir out/videos --video-grid`.
+  Scenarios in `examples/online_serving/vla_maas/scenarios/`; install and EGL
+  notes in that README ("Simulated multi-arm fleet").
 - **Serving-layout sweep on CPU mocks** (serial vs replicas vs batched):
   `ROBOTS="1 4 16" DURATION=10 bash examples/online_serving/vla_maas/concurrency_sweep.sh out.jsonl`.
 - **Serve a real π0.5 checkpoint**: `vllm serve <ckpt> --omni --port 8000
   --deploy-config examples/online_serving/vla_maas/pi05_libero.yaml --enforce-eager`.
   Camera keys sent by clients must match the checkpoint's `input_features`.
+- **Connect a robot (any arm) through the standard protocol**: driver in
+  `packages/vla-maas-robot/vla_maas_robot/drivers/`, robot yaml, `robotctl check`
+  then `robotctl run` (dry_run first). The model needs an `adapter:` block in
+  the gateway yaml (`apps/vla-maas-gateway/model_adapters.py` docstring).
 - **Put a model behind the gateway**: add `models.<name>.backends: [ws://host:port/v1/realtime/robot/openpi, ...]`
   to a gateway yaml (copy `apps/vla-maas-gateway/gateway.example.yaml`).
   Several backends = replica data parallel, least-loaded per session.
@@ -101,6 +114,9 @@ vllm serve <ckpt> --omni --deploy-config <yaml>      or  mock_policy_server.py (
 - Benchmark claims name model, checkpoint, deploy yaml, `max_num_seqs`,
   dtype, `num_inference_steps`, GPU type and count, git SHA and client
   command. Compare serial vs batched with the same fleet and duration.
+- Only Panda on real LIBERO (`kind: libero`) gives a meaningful π0.5 LIBERO
+  success rate; other arms/robosuite tasks in `sim_fleet.py` measure serving
+  under real rendering, not policy quality.
 - Real-checkpoint success rate needs the real LIBERO simulator. `fleet_sim.py`
   against a real checkpoint uses the mock env, so its success rate is
   meaningless there; read only latency/throughput.

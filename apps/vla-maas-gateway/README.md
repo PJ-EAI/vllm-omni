@@ -1,6 +1,6 @@
 # VLA MaaS gateway
 
-A single-tenant gateway that exposes vllm-omni VLA policy servers as one API.
+A gateway that exposes vllm-omni VLA policy servers as one API.
 It sits in front of one or more `vllm serve ... --omni` instances (or the CPU
 mock in `examples/online_serving/vla_maas/mock_policy_server.py`) and adds:
 
@@ -8,8 +8,22 @@ mock in `examples/online_serving/vla_maas/mock_policy_server.py`) and adds:
   `openpi-client` sends when constructed with `api_key=`.
 - **Model routing**: `ws://<gateway>/v1/robot/<model>/openpi`; each session goes to
   the least-loaded backend configured for that model.
-- **Transparent OpenPI relay**: frames pass through unchanged; the handshake
-  metadata gains `model` and `backend`.
+- **Standard Robot protocol**: `wss://<gateway>/v1/robot/<model>/act?robot_id=<id>`
+  speaks the model-agnostic protocol in
+  [packages/vla-maas-protocol](../../packages/vla-maas-protocol/spec/robot_protocol.md).
+  The model's `adapter` (`model_adapters.py`) translates each frame to the
+  backend's native OpenPI frame and back, so robots never see model keys and
+  model servers do not change. Robots run the
+  [vla-maas-robot](../../packages/vla-maas-robot/README.md) client.
+- **Transparent OpenPI relay**: `/v1/robot/<model>/openpi` frames pass through
+  unchanged; the handshake metadata gains `model` and `backend`.
+- **Per-robot keys**: `robots.<id>.api_key` is valid only on `/act`, for that
+  `robot_id` and its `models`. `api_keys` are operator keys for every route.
+- **Robots**: `GET /v1/robots` lists connected robots;
+  `GET /v1/robots/<id>/stop` answers that robot's next observation with `stop`
+  (the websockets HTTP server accepts only GET). This is not an e-stop: keep a
+  hardware e-stop at every robot. `GET /v1/models/<model>` shows what a model
+  requires and provides on `/act`.
 - **Dashboard**: `GET /dashboard`, a live panel that polls `/metrics` with the key
   typed into it.
 - **Metrics**: `GET /metrics` returns per-model request/error counts, active
@@ -18,6 +32,9 @@ mock in `examples/online_serving/vla_maas/mock_policy_server.py`) and adds:
 Errors: 401 for a missing or wrong key, 404 for an unknown model, websocket close
 1011 when a backend is unreachable, and an OpenPI `{"type": "error"}` reply when a
 backend times out (`request_timeout_s`).
+
+Install the protocol package next to the gateway's other dependencies:
+`pip install ./packages/vla-maas-protocol`.
 
 ## One-command demo
 
@@ -55,8 +72,26 @@ curl -H "Authorization: Api-Key dev-key-change-me" localhost:9000/metrics
 For real backends, replace the `backends` URLs in the config with the
 `/v1/realtime/robot/openpi` endpoints of the vllm-omni servers.
 
+## A robot on the standard protocol
+
+```bash
+pip install ./packages/vla-maas-protocol ./packages/vla-maas-robot
+python3 examples/online_serving/vla_maas/mock_policy_server.py --port 8001 --latency-ms 40 --idle-motion 0.05 &
+python3 apps/vla-maas-gateway/gateway.py --config apps/vla-maas-gateway/gateway.example.yaml &
+
+export VLA_MAAS_API_KEY=mock-01-key-change-me
+robotctl check --robot packages/vla-maas-robot/robots/mock.yaml
+robotctl run --robot packages/vla-maas-robot/robots/mock.yaml --instruction "wave" --max-steps 100
+curl -H "Authorization: Api-Key dev-key-change-me" localhost:9000/v1/robots
+```
+
+A model is available on `/act` once its entry has an `adapter`; see the
+docstring of `model_adapters.py` for every key. On public networks put the
+gateway behind a TLS-terminating proxy and give every robot its own key.
+
 ## Not yet covered
 
-Multi-tenancy (per-tenant keys, quotas, billing), TLS termination (put it behind
-a reverse proxy), health-checked backend failover, and a plain HTTP inference
-endpoint for clients that cannot hold a websocket.
+Multi-tenancy (tenants, quotas, billing), TLS termination (put it behind a
+reverse proxy), health-checked backend failover, adapters for models whose
+native output is not one action array (GR00T, DreamZero), and a plain HTTP
+inference endpoint for clients that cannot hold a websocket.

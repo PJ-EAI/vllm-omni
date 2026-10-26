@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vla-maas-robot"
+version = "0.1.0"
+description = "Robot-side client of the VLA MaaS: drivers, cameras, safety filter and control loop"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+# Never add vllm, vllm-omni, torch or the gateway here: this package runs on robot PCs.
+dependencies = ["vla-maas-protocol>=0.1,<0.2", "numpy", "pyyaml", "websockets>=13"]
+
+[project.optional-dependencies]
+jpeg = ["pillow"]
+uvc = ["opencv-python-headless"]
+realsense = ["pyrealsense2"]
+piper = ["piper_sdk>=0.6"]
+test = ["pytest", "pillow"]
+
+[project.scripts]
+robotctl = "vla_maas_robot.robotctl:main"
+
+[tool.setuptools]
+packages = ["vla_maas_robot", "vla_maas_robot.drivers"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

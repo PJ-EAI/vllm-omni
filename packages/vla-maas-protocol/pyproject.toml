@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vla-maas-protocol"
+version = "0.1.0"
+description = "Standard Robot protocol of the VLA MaaS: message types, vocabulary and msgpack codec"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+dependencies = ["numpy", "msgpack>=1.0"]
+
+[project.optional-dependencies]
+jpeg = ["pillow"]
+test = ["pytest", "pillow"]
+
+[tool.setuptools]
+packages = ["vla_maas_protocol"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -62,6 +62,22 @@ names with `model_config.image_key_map` in the deploy yaml. The clients default
 to `observation.images.image` / `observation.images.image2`; override with
 `--base-camera-key` / `--wrist-camera-key`.
 
+## Standard Robot protocol (`/act`)
+
+`WS /v1/robot/<model>/act?robot_id=<id>[&embodiment=<e>]`, spec in
+`packages/vla-maas-protocol/spec/robot_protocol.md`. Handshake:
+`server_hello` (model `requires` cameras by role + state fields, `provides`
+space/horizon/control_hz) → `robot_hello` → `ready` or `error` + close 4400.
+Then `obs` → `actions` (absolute targets, `server_ms`) | `stop` | `error`.
+Only models with an `adapter:` block in the gateway yaml are served here
+(404 otherwise). Robot keys (`robots.<id>.api_key`) work only on `/act` for
+that robot and its `models`; `api_keys` are operator keys.
+`GET /v1/robots`, `GET /v1/robots/<id>/stop`, `GET /v1/models/<model>`.
+
+Robot side: `pip install ./packages/vla-maas-protocol ./packages/vla-maas-robot`,
+then `robotctl check|run|home --robot <yaml>` (`packages/vla-maas-robot/robots/mock.yaml`).
+`run` defaults to `dry_run`.
+
 ## Client tools (`examples/online_serving/vla_maas/`)
 
 All take `--host --port --path --api-key`. Direct to a server:
@@ -76,6 +92,10 @@ All take `--host --port --path --api-key`. Direct to a server:
 | `latency_bench.py` | `--cameras --state-dim --image-size --num-inference-steps --warmup --iters --output` | JSON latency percentiles vs control budget |
 | `concurrency_sweep.sh` | env `ROBOTS DURATION LATENCY_MS PER_ITEM_MS REPLICAS PYTHON` | JSONL over serial / replicas-N / batched |
 | `mock_libero.py` | — | Dependency-free LIBERO stand-in |
+| `sim_fleet.py` | `--scenario --duration-s --episodes --render-gpus --video-dir --video-grid --record-episodes --output --episodes-out` | JSONL per group + `all`: fleet_sim fields plus `group, model, env, task, robot, sim_step_p50_ms, videos, errors`; per-episode JSONL; MP4s |
+| `sim_envs.py` | scenario `env: {kind: libero\|robosuite\|mock, robot, task, suite, task_ids, resolution, max_steps, video_camera}` | Simulator adapters, same obs layout as `libero_eval.py` |
+| `video_grid.py` | `<video_dir> --cols --max-clips` | Grid MP4 of a run's clips |
+| `sim_fleet_demo.sh` | env `GATEWAY_CONFIG MUJOCO_GL RENDER_GPUS OUT_DIR GW_PORT` | mock backends (or yours) + gateway + `sim_fleet.py` |
 
 `--action-scale` must match between `mock_policy_server.py` and the mock env
 (`fleet_sim.py --action-scale`), otherwise mock success drops.
@@ -98,6 +118,14 @@ mujoco` renders MuJoCo Menagerie arms (Panda, UR5e, xArm 7) in a tabletop
 reach task and needs a Menagerie sparse checkout plus EGL. The default mock
 physics has no articulated robot by design. It is a debugging console, not a
 benchmark: sessions share one process, so use `fleet_sim.py` for timing numbers.
+
+`--robot-config <robot.yaml>` switches the studio to the standard Robot
+protocol (`/act`): it runs the robot file through `vla_maas_robot`'s adapter,
+safety filter and control loop. The default source is a MuJoCo twin
+(`piper_sim.py`, Piper only, spec copied from `PiperDriver`); `--hardware` uses
+the file's real driver and cameras, one session, and needs a browser
+confirmation for `slow`/`live`. `PHYSICS=piper bash apps/vla-maas-studio/run_demo.sh`
+is the CPU demo.
 
 ## Latency budget
 

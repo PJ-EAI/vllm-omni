@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 
 const state = {
   catalog: null,
+  act: false, // standard Robot protocol mode (studio.py --robot-config)
   ws: null,
   ready: false,
   models: [],
@@ -152,6 +153,9 @@ function onHello(message) {
 
 function applyCatalog(catalog) {
   const defaults = catalog.defaults || {};
+  state.act = Boolean(catalog.robot_config);
+  document.body.classList.toggle('mode-act', state.act);
+  if (state.act) applyRobotCatalog(catalog);
   $('physics').textContent = catalog.physics;
   $('robots').max = String(catalog.limits.max_robots);
   updateGatewayHint(catalog);
@@ -190,6 +194,29 @@ function applyCatalog(catalog) {
   if (defaults.report_episodes != null) $('report-episodes').checked = Boolean(defaults.report_episodes);
 
   populateTasks();
+}
+
+function applyRobotCatalog(catalog) {
+  const robot = catalog.robot_config;
+  const defaults = catalog.defaults || {};
+  $('target').value = 'gateway';
+  $('act-physics').textContent = `${catalog.protocol} · ${catalog.physics}`;
+  $('hardware-tag').hidden = !robot.hardware;
+  const cameras = Object.entries(robot.cameras).map(([role, kind]) => `${role}=${kind}`).join(', ');
+  $('robot-summary').textContent =
+    `robot_id ${robot.robot_id} · driver ${robot.driver}${robot.hardware ? '' : '（MuJoCo 孪生）'} · 相机 ${cameras || '无'} · 文件中的模型 ${robot.model}`;
+  if (defaults.instruction) $('instruction').value = defaults.instruction;
+  if (defaults.mode) $('safety-mode').value = defaults.mode;
+  if (defaults.episodes != null) $('episodes').value = defaults.episodes;
+  if (defaults.max_steps != null) $('max-steps').value = defaults.max_steps;
+  updateConfirmRow();
+}
+
+function updateConfirmRow() {
+  const hardware = Boolean(state.catalog?.robot_config?.hardware);
+  const moves = $('safety-mode').value !== 'dry_run';
+  $('confirm-row').hidden = !(hardware && moves);
+  if (!moves) $('confirm-motion').checked = false;
 }
 
 function updateGatewayHint(catalog) {
@@ -254,6 +281,21 @@ function onGatewayMetrics(message) {
 // -- run control -----------------------------------------------------------
 
 function collectConfig() {
+  if (state.act) {
+    return {
+      model: $('model').value,
+      instruction: $('instruction').value.trim(),
+      mode: $('safety-mode').value,
+      confirm_motion: $('confirm-motion').checked,
+      robots: Number($('robots').value),
+      episodes: Number($('episodes').value),
+      max_steps: Number($('max-steps').value),
+      duration_s: Number($('duration').value),
+      control_hz: Number($('control-hz').value),
+      prefetch: Number($('prefetch').value),
+      frame_fps: Number($('frame-fps').value),
+    };
+  }
   const taskIds = [...document.querySelectorAll('#tasks input:checked')].map((input) => Number(input.value));
   return {
     target: $('target').value,
@@ -278,7 +320,15 @@ function collectConfig() {
 }
 
 function validateConfig(config) {
-  if (!config.task_ids.length) return '至少选择一个任务。';
+  if (state.act) {
+    if (!config.model) return '请选择或刷新模型（需要网关上配置了 adapter 的模型）。';
+    if (!config.instruction) return '请输入指令。';
+    if (state.catalog.robot_config.hardware && config.mode !== 'dry_run' && !config.confirm_motion) {
+      return `${config.mode} 模式会让真机运动：请先确认工作区已清空、急停在手边。`;
+    }
+  } else if (!config.task_ids.length) {
+    return '至少选择一个任务。';
+  }
   if (!Number.isFinite(config.robots) || config.robots < 1) return '机器人数量至少为 1。';
   if (state.catalog && config.robots > state.catalog.limits.max_robots) {
     return `机器人数量最多为 ${state.catalog.limits.max_robots}。`;
@@ -318,7 +368,7 @@ function startRun() {
   $('stop').disabled = false;
   $('run-state').textContent = '启动中…';
   send({ type: 'start', config });
-  startGatewayPolling(config.target === 'gateway');
+  startGatewayPolling(state.act || config.target === 'gateway');
 }
 
 function stopRun() {
@@ -419,12 +469,16 @@ function upsertTile(session) {
     state.tiles.set(session.id, tile);
     $('grid').append(root);
   }
-  tile.titleText.textContent = `#${session.id} · task ${session.task_id ?? '–'}`;
+  tile.titleText.textContent = state.act
+    ? `#${session.id} · ${session.robot?.robot_id || '–'} · ${session.robot?.safety?.mode || ''}`
+    : `#${session.id} · task ${session.task_id ?? '–'}`;
   tile.backend.textContent = shortBackend(session.backend);
   tile.lang.textContent = session.language || '—';
   tile.lang.title = session.language || '';
   tile.episodes.textContent = `ep ${session.episodes}`;
-  tile.success.textContent = `成功 ${session.successes}`;
+  tile.success.textContent = state.act
+    ? `cmd ${session.robot?.commands_sent ?? 0}`
+    : `成功 ${session.successes}`;
   tile.latency.textContent = session.latency_p50_ms == null ? 'p50 –' : `p50 ${session.latency_p50_ms.toFixed(0)} ms`;
   tile.badge.textContent = stateLabel(session.state);
   tile.badge.className = `badge ${session.state}`;
@@ -501,8 +555,10 @@ function updateDetail(session) {
     $('detail-title').textContent = `#${state.detailId}`;
     return;
   }
-  $('detail-title').textContent = `#${session.id} · task ${session.task_id ?? '–'} · ${session.language || '—'}`;
-  const items = [
+  $('detail-title').textContent = state.act
+    ? `#${session.id} · ${session.robot?.robot_id || '–'} · ${session.language || '—'}`
+    : `#${session.id} · task ${session.task_id ?? '–'} · ${session.language || '—'}`;
+  const items = state.act ? robotItems(session) : [
     ['状态', stateLabel(session.state)],
     ['backend', shortBackend(session.backend) || '–'],
     ['模型', session.model || '–'],
@@ -528,6 +584,7 @@ function updateDetail(session) {
     item.append(v, l);
     container.append(item);
   }
+  if (state.act) $('detail-robot-text').textContent = robotText(session.robot || {});
   const action = session.last_action || [];
   $('detail-action').textContent = action.length ? action.map((value) => value.toFixed(3)).join(', ') : '–';
   const error = $('detail-error');
@@ -538,6 +595,46 @@ function updateDetail(session) {
     error.hidden = true;
     error.textContent = '';
   }
+}
+
+function robotItems(session) {
+  const robot = session.robot || {};
+  const safety = robot.safety || {};
+  const ms = (value) => (value == null ? '–' : `${value.toFixed(1)} ms`);
+  return [
+    ['状态', stateLabel(session.state)],
+    ['模型', session.model || '–'],
+    ['安全模式', safety.mode || '–'],
+    ['episodes', session.episodes],
+    ['round trip p50', ms(session.latency_p50_ms)],
+    ['server p50', ms(robot.server_p50_ms)],
+    ['network p50', ms(robot.network_p50_ms)],
+    ['推理次数', robot.inferences ?? 0],
+    ['ticks', session.ticks],
+    ['已下发命令', robot.commands_sent ?? 0],
+    ['clamped', safety.clamped ?? 0],
+    ['underruns', session.underruns],
+  ];
+}
+
+function robotText(robot) {
+  const lines = [];
+  const add = (label, value) => {
+    if (value === undefined) return;
+    lines.push(`${label}: ${typeof value === 'object' && value !== null ? JSON.stringify(value) : value}`);
+  };
+  add('joint_pos (rad)', robot.joint_pos);
+  add('gripper (driver units)', robot.gripper_raw);
+  add('eef xyz (m)', robot.eef_xyz);
+  add('last command', robot.last_command);
+  add('safety', robot.safety);
+  add('stopped', robot.stopped);
+  add('last episode', robot.last_episode);
+  add('session', robot.session_id);
+  add('control_hz', robot.control_hz);
+  add('requires', robot.requires);
+  add('provides', robot.provides);
+  return lines.join('\n') || '–';
 }
 
 // -- chart -----------------------------------------------------------------
@@ -665,6 +762,7 @@ $('target').addEventListener('change', () => {
   $('gateway-fields').hidden = direct;
   $('direct-fields').hidden = !direct;
 });
+$('safety-mode').addEventListener('change', updateConfirmRow);
 $('detail-close').addEventListener('click', closeDetail);
 $('detail').addEventListener('click', (event) => {
   if (event.target === $('detail')) closeDetail();

@@ -51,6 +51,13 @@ def connect_policy(host: str, port: int, path: str = DEFAULT_PATH, api_key: str 
     return policy, dict(policy.get_server_metadata())
 
 
+def close_policy(policy: Any) -> None:
+    """Close the session's websocket so the server sees a clean 1000 close."""
+    ws = getattr(policy, "_ws", None)
+    if ws is not None:
+        ws.close()
+
+
 def infer_actions(policy: Any, obs: dict) -> np.ndarray:
     response = policy.infer(obs)
     if isinstance(response, dict) and response.get("type") == "error":

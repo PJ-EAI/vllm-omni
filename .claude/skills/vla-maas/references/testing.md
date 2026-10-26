@@ -12,13 +12,16 @@ claim needs. Each rung lists what it proves and what it does not.
 | T4 GPU serve + fleet sweep | 1+ GPU, checkpoint | `serve_and_sweep.sh` (serial vs batched yaml) | real throughput/latency vs concurrency |
 | T5 GPU e2e test | H100, checkpoint | `pytest tests/e2e/online_serving/test_pi05_expansion.py` | CI-equivalent wire path |
 | T6 Task success | GPU + LIBERO sim | `libero_eval.py` without `--mock` | policy quality through the service |
+| T7 Multi-arm sim fleet | robosuite (+ LIBERO), EGL GPU for speed | `sim_fleet.py --scenario scenarios/sim_fleet_libero_mixed.yaml` | serving under mixed arms/models with real renders; videos; success only for Panda/LIBERO |
 
 ## Change → minimum rung
 
 | Changed | Run |
 | --- | --- |
-| `apps/vla-maas-gateway/*` | T0 (+ T2 if routing/load behaviour changed) |
+| `apps/vla-maas-gateway/*` | `cd apps/vla-maas-gateway && pytest -q`, T0 (+ T2 if routing/load behaviour changed) |
+| `packages/vla-maas-protocol/*`, `packages/vla-maas-robot/*` | `pytest -q` inside each package (only those two packages installed), gateway tests, T0 |
 | `examples/online_serving/vla_maas/*` | T0 and the edited tool's own mock run |
+| `sim_envs.py`, `sim_fleet.py`, video tools | T0 (mock sim stage), plus a short robosuite run (`MUJOCO_GL=osmesa` works on CPU) |
 | `vllm_omni/entrypoints/openpi/*` | T1 openpi tests, then T5 |
 | `vllm_omni/diffusion/models/pi05/*` | T1 pi05 units, then T3/T4 for perf claims, T5 for wire path |
 | Deploy yaml / batching knobs | T4 serial vs batched, same fleet and duration |

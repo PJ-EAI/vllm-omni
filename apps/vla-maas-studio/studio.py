@@ -12,6 +12,11 @@ Usage:
         --gateway http://127.0.0.1:9000 --api-key dev-key-change-me
     # open http://127.0.0.1:9100
 
+    # Standard Robot protocol (maas-robot/1) with a robot file from
+    # packages/vla-maas-robot: a MuJoCo twin by default, the real arm with --hardware.
+    python3 apps/vla-maas-studio/studio.py \
+        --robot-config packages/vla-maas-robot/robots/piper.yaml [--hardware]
+
 Requires the client extras: websockets, msgpack, msgpack-numpy, numpy, pillow
 and openpi-client. Real LIBERO scenes additionally need LIBERO/robosuite.
 """
@@ -41,6 +46,7 @@ from websockets.http11 import Request, Response
 logger = logging.getLogger("vla_maas_studio")
 
 STATIC_DIR = Path(__file__).with_name("static")
+DEFAULT_GATEWAY = "http://127.0.0.1:9000"
 MIME_TYPES = {
     "index.html": "text/html; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
@@ -66,24 +72,54 @@ class Client:
 
 
 class Studio:
-    def __init__(self, args: argparse.Namespace, catalog: dict) -> None:
+    def __init__(self, args: argparse.Namespace, catalog: dict, robot_cfg=None) -> None:
         self.args = args
         self.catalog = catalog
+        # Set with --robot-config: runs speak the standard Robot protocol (robot_run.py).
+        self.robot_cfg = robot_cfg
         self.clients: set[Client] = set()
-        self.run: Run | None = None
+        self.run = None  # runner.Run or robot_run.ActRun
         self.run_lock = asyncio.Lock()
 
     # -- catalog / gateway helpers -------------------------------------------
 
     def gateway_url(self) -> str:
-        url = self.args.gateway
-        return url.rstrip("/") if url else ""
+        if self.robot_cfg is not None:
+            from robot_run import gateway_http_url
+
+            return gateway_http_url(self.args.gateway, self.robot_cfg)
+        url = self.args.gateway or DEFAULT_GATEWAY
+        return url.rstrip("/")
+
+    def api_key(self) -> str | None:
+        if self.args.api_key:
+            return self.args.api_key
+        return self.robot_cfg.gateway.api_key if self.robot_cfg is not None else None
 
     def catalog_public(self) -> dict:
-        return {
+        common = {
             **self.catalog,
-            "gateway": {"url": self.gateway_url(), "has_key": bool(self.args.api_key)},
+            "gateway": {"url": self.gateway_url(), "has_key": bool(self.api_key())},
             "limits": {"max_robots": int(self.catalog.get("max_robots", MAX_ROBOTS))},
+        }
+        if self.robot_cfg is not None:
+            hardware = self.catalog["robot_config"]["hardware"]
+            return {
+                **common,
+                "defaults": {
+                    "robots": 1,
+                    "duration_s": 120,
+                    "control_hz": 0,
+                    "prefetch": -1,
+                    "frame_fps": 5,
+                    "episodes": 1,
+                    "max_steps": 600,
+                    "instruction": "pick up the red cube",
+                    "mode": self.robot_cfg.safety.start_mode if hardware else "live",
+                },
+            }
+        return {
+            **common,
             "defaults": {
                 "robots": 8,
                 "duration_s": 30,
@@ -101,11 +137,11 @@ class Studio:
         }
 
     def _fetch(self, path: str) -> dict:
-        if not self.args.gateway:
+        if not self.gateway_url():
             raise RuntimeError("no --gateway configured")
         request = urllib.request.Request(self.gateway_url() + path)
-        if self.args.api_key:
-            request.add_header("Authorization", f"Api-Key {self.args.api_key}")
+        if self.api_key():
+            request.add_header("Authorization", f"Api-Key {self.api_key()}")
         try:
             with urllib.request.urlopen(request, timeout=3.0) as response:
                 return json.loads(response.read())
@@ -126,10 +162,67 @@ class Studio:
 
     # -- run control ----------------------------------------------------------
 
+    def _act_models(self) -> dict:
+        """Models served on /act. A robot key cannot list models, so fall back to the robot file's."""
+        try:
+            ids = [model["id"] for model in self._fetch("/v1/models").get("models", [])]
+        except RuntimeError:
+            ids = []
+        ids = list(dict.fromkeys([self.robot_cfg.gateway.model, *ids]))
+        models, errors = [], []
+        for model_id in ids:
+            try:
+                info = self._fetch(f"/v1/models/{model_id}")
+            except RuntimeError as exc:
+                errors.append(f"{model_id}: {exc}")
+                continue
+            if info.get("act"):
+                models.append(info)
+        result = {"models": models}
+        if not models and errors:
+            result["error"] = "; ".join(errors)
+        return result
+
+    async def start_act_run(self, payload: dict) -> dict:
+        from robot_run import ActRun, parse_act_config
+
+        config = parse_act_config(payload, self.catalog)
+        # Fail fast with the gateway's answer (this route accepts robot keys too).
+        info = await asyncio.to_thread(self._fetch, f"/v1/models/{config.model}")
+        if not info.get("act"):
+            raise RuntimeError(f"model {config.model!r} has no adapter for the standard Robot protocol (/act)")
+        async with self.run_lock:
+            previous = self.run
+            if previous is not None and previous.running:
+                await asyncio.to_thread(previous.stop)
+            run = ActRun(
+                config,
+                self.robot_cfg,
+                gateway=self.gateway_url(),
+                api_key=self.api_key(),
+                hardware=self.catalog["robot_config"]["hardware"],
+                menagerie=self.args.menagerie,
+            )
+            run.set_watched(self.watched_union())
+            await asyncio.to_thread(run.start)
+            self.run = run
+            logger.info(
+                "run %s started: %d x %s on %s, mode=%s, physics=%s",
+                run.id,
+                config.robots,
+                self.robot_cfg.robot_id,
+                config.model,
+                config.mode,
+                self.catalog["physics"],
+            )
+            return run.snapshot()
+
     async def start_run(self, payload: dict) -> dict:
+        if self.robot_cfg is not None:
+            return await self.start_act_run(payload)
         config = parse_run_config(payload, self.catalog)
         config.menagerie = self.args.menagerie
-        endpoint = resolve_endpoint(config, self.args.gateway, self.args.api_key)
+        endpoint = resolve_endpoint(config, self.gateway_url(), self.args.api_key)
         if config.target == "gateway":
             # Fail fast (and with the gateway's error) instead of letting N
             # sessions each sit in a 10 s websocket connect timeout.
@@ -189,7 +282,8 @@ class Studio:
             await self.refresh_watched()
         elif kind == "models":
             try:
-                models = await asyncio.to_thread(self._fetch, "/v1/models")
+                fetch = self._act_models if self.robot_cfg is not None else lambda: self._fetch("/v1/models")
+                models = await asyncio.to_thread(fetch)
                 client.push(json.dumps({"type": "models", **models}))
             except RuntimeError as exc:
                 client.push(json.dumps({"type": "models", "models": [], "error": str(exc)}))
@@ -283,8 +377,18 @@ def make_process_request(studio: Studio):
 
 async def _main(args: argparse.Namespace) -> None:
     logging.basicConfig(level=args.log_level, format="%(asctime)s %(levelname)s %(message)s")
-    catalog = build_catalog(args.physics, args.menagerie)
-    studio = Studio(args, catalog)
+    robot_cfg = None
+    if args.robot_config:
+        from robot_run import build_robot_catalog
+        from vla_maas_robot.config import load_robot_config
+
+        robot_cfg = load_robot_config(args.robot_config)
+        catalog = build_robot_catalog(robot_cfg, args.hardware, args.menagerie)
+    elif args.hardware:
+        raise SystemExit("--hardware needs --robot-config")
+    else:
+        catalog = build_catalog(args.physics, args.menagerie)
+    studio = Studio(args, catalog, robot_cfg)
 
     async def handler(connection: ServerConnection) -> None:
         client = Client()
@@ -327,7 +431,7 @@ async def _main(args: argparse.Namespace) -> None:
             "studio on http://%s:%d (physics=%s, gateway=%s)",
             args.host,
             args.port,
-            args.physics,
+            catalog["physics"],
             studio.gateway_url() or "none",
         )
         try:
@@ -344,13 +448,27 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Browser console for a VLA MaaS deployment")
     parser.add_argument("--host", default="127.0.0.1", help="Bind address (keep it on localhost).")
     parser.add_argument("--port", type=int, default=9100)
-    parser.add_argument("--gateway", default="http://127.0.0.1:9000")
+    parser.add_argument(
+        "--gateway",
+        default=None,
+        help=f"Gateway URL (default {DEFAULT_GATEWAY}, or gateway.url of --robot-config).",
+    )
     parser.add_argument("--api-key", default=os.environ.get("VLA_MAAS_API_KEY"))
     parser.add_argument("--physics", default="mock", choices=["mock", "libero", "mujoco"])
     parser.add_argument(
         "--menagerie",
         default=os.environ.get("MUJOCO_MENAGERIE", "~/.cache/mujoco_menagerie"),
         help="MuJoCo Menagerie checkout (used with --physics mujoco).",
+    )
+    parser.add_argument(
+        "--robot-config",
+        default=None,
+        help="Robot YAML from packages/vla-maas-robot: run it on the standard Robot protocol (/act).",
+    )
+    parser.add_argument(
+        "--hardware",
+        action="store_true",
+        help="With --robot-config: use the file's real driver and cameras instead of the MuJoCo twin.",
     )
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args()
