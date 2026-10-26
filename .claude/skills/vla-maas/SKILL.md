@@ -25,6 +25,7 @@ under `.claude/skills/vla-maas/`.
 | Understand how a request flows, where to change what | [references/architecture.md](references/architecture.md) |
 | Gateway API, OpenPI wire protocol, observation schema, client tools | [references/maas-stack.md](references/maas-stack.md) |
 | Connect a real arm (robot client, Piper), test it in the studio twin, bring-up order | [references/robots.md](references/robots.md) |
+| Deploy for real arms on another network: cluster + gateway + TLS / each arm PC | [vla-maas-deploy-server](../vla-maas-deploy-server/SKILL.md), [vla-maas-deploy-robot](../vla-maas-deploy-robot/SKILL.md), guide [docs/serving/vla_maas_piper_deployment.md](../../../docs/serving/vla_maas_piper_deployment.md) |
 | Which VLA models exist, their deploy configs and status | [references/models.md](references/models.md) |
 | Which test or benchmark proves a claim, exact commands | [references/testing.md](references/testing.md) |
 | Running any of this as a batch/cluster job | [references/cluster-jobs.md](references/cluster-jobs.md) |
@@ -128,7 +129,8 @@ vllm serve <ckpt> --omni --deploy-config <yaml>      or  mock_policy_server.py (
 - One port set per job. Never assume 8000/9000 are free on a shared node;
   scripts take `PORT`/`GW_PORT` overrides.
 - Gateway is single-tenant: no TLS, no quotas, no health-checked failover
-  (listed in `apps/vla-maas-gateway/README.md`). Do not expose it publicly.
+  (listed in `apps/vla-maas-gateway/README.md`). Do not expose it publicly;
+  public deployments go behind a TLS proxy (`vla-maas-deploy-server`).
 - Work on the `maas` branch line of `PJ-EAI/vllm-omni` unless told otherwise.
 
 ## Result contract
