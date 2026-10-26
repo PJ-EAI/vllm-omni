@@ -76,6 +76,11 @@ vllm serve <ckpt> --omni --deploy-config <yaml>      or  mock_policy_server.py (
   `bash apps/vla-maas-gateway/run_demo.sh 8 60`, `MODE=serial` for the
   unbatched baseline. Dashboard at `http://<host>:9000/dashboard`, key
   `dev-key-change-me`.
+- **Simulated multi-arm fleet with video** (robosuite/LIBERO, headless EGL):
+  `bash examples/online_serving/vla_maas/sim_fleet_demo.sh <scenario.yaml> <duration-s>`
+  or `sim_fleet.py --scenario ... --render-gpus 0,1 --video-dir out/videos --video-grid`.
+  Scenarios in `examples/online_serving/vla_maas/scenarios/`; install and EGL
+  notes in that README ("Simulated multi-arm fleet").
 - **Serving-layout sweep on CPU mocks** (serial vs replicas vs batched):
   `ROBOTS="1 4 16" DURATION=10 bash examples/online_serving/vla_maas/concurrency_sweep.sh out.jsonl`.
 - **Serve a real π0.5 checkpoint**: `vllm serve <ckpt> --omni --port 8000
@@ -96,6 +101,9 @@ vllm serve <ckpt> --omni --deploy-config <yaml>      or  mock_policy_server.py (
 - Benchmark claims name model, checkpoint, deploy yaml, `max_num_seqs`,
   dtype, `num_inference_steps`, GPU type and count, git SHA and client
   command. Compare serial vs batched with the same fleet and duration.
+- Only Panda on real LIBERO (`kind: libero`) gives a meaningful π0.5 LIBERO
+  success rate; other arms/robosuite tasks in `sim_fleet.py` measure serving
+  under real rendering, not policy quality.
 - Real-checkpoint success rate needs the real LIBERO simulator. `fleet_sim.py`
   against a real checkpoint uses the mock env, so its success rate is
   meaningless there; read only latency/throughput.
