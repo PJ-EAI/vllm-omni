@@ -62,6 +62,77 @@ Notes:
   of distribution here; use this mode to inspect arms and the serving loop, not
   to claim policy quality.
 
+## AgileX Piper on the standard Robot protocol
+
+`--robot-config` runs one robot file from
+[`packages/vla-maas-robot`](../../packages/vla-maas-robot/README.md) (for example
+[`robots/piper.yaml`](../../packages/vla-maas-robot/robots/piper.yaml)) on the
+standard Robot protocol, `maas-robot/1` on `/v1/robot/<model>/act`, instead of
+the native OpenPI relay. The studio drives it with the robot client's own
+`RobotAdapter`, `SafetyFilter`, `PolicyClient` and `ControlLoop`, so a session
+in the browser does what `robotctl run` does with that file: the same
+handshake, model adapter, safety modes, tick-aligned chunks and hold on stop.
+The studio adds only observation (camera frames, joint state, commands, round
+trip, safety counters).
+
+```bash
+# CPU demo: mock backend behind a Piper-shaped /act adapter, gateway, studio with the twin
+git clone --depth 1 --filter=blob:none --sparse \
+    https://github.com/google-deepmind/mujoco_menagerie ~/.cache/mujoco_menagerie
+(cd ~/.cache/mujoco_menagerie && git sparse-checkout set agilex_piper)
+pip install mujoco ./packages/vla-maas-protocol ./packages/vla-maas-robot
+PHYSICS=piper bash apps/vla-maas-studio/run_demo.sh
+
+# Against your gateway, MuJoCo twin first
+python3 apps/vla-maas-studio/studio.py --robot-config my-piper.yaml
+
+# Then the real arm (one session; slow/live need the browser confirmation)
+pip install "./packages/vla-maas-robot[piper,realsense,uvc]"
+python3 apps/vla-maas-studio/studio.py --robot-config my-piper.yaml --hardware
+```
+
+- **Gateway and key** come from the robot file (`gateway.url`,
+  `gateway.api_key_env`); `--gateway` and `--api-key` override them. A robot
+  key can use `/act` but cannot list models, so the model picker then offers
+  only the file's `gateway.model`. Only models with an `adapter` are listed.
+- **Twin (default)**: `piper_sim.py` builds `PiperSimDriver` from the same
+  `driver:` block and copies the real `PiperDriver`'s spec (joint limits,
+  gripper stroke 0–70 mm, modes), so the handshake and the safety filter see
+  what they will see on hardware. Joints track targets kinematically at
+  `speed_pct`, end-pose targets go through IK on `link6`, and the YAML's camera
+  roles are rendered (`front` looks at the table, `wrist` rides on `link6`).
+  It starts at `home_joints`, where `robotctl home` leaves the real arm. Up to 8
+  sessions; with more than one, robot ids get a `-<n>` suffix and need an
+  operator key.
+- **Hardware (`--hardware`)**: the file's own driver and cameras, one session
+  with the file's `robot_id`. The safety mode defaults to the file's
+  `safety.start_mode` (`dry_run`: commands are filtered and counted, nothing is
+  sent); `slow` and `live` need the confirmation box. **Stop** sets the
+  control loop's stop event: the arm holds and the motors stay enabled, as with
+  Ctrl+C in `robotctl`. The studio never homes the arm; use `robotctl home`.
+- **Detail view**: all camera roles side by side, joint positions, gripper,
+  end-effector position, the last command after the safety filter, clamp
+  counts and reasons, round trip / server / network p50, and the handshake's
+  `requires` / `provides`.
+- **Order for a first real run**: twin with the real file, then `--hardware`
+  in `dry_run`, then `slow`, then `live`.
+
+Caveats:
+
+- The twin is kinematic: no contact, no gravity, no grasping. It checks the
+  route, the adapter, units and safety settings, not policy quality (lessons
+  L002). Rendered images are not real camera images.
+- Piper rests with joints 2 and 3 on their limits (0 rad). With the example
+  file's `joint_margin_rad: 0`, any target below those limits is clamped, and
+  five clamped commands in a row stop the episode. A delta-joint model started
+  from the rest pose can hit this; start from a ready pose (`home_joints` plus
+  `robotctl home`). `run_demo.sh` does this for the twin.
+- `eef_pose` in the twin is the `link6` frame; the real driver reports the
+  SDK's end pose. Check both against each other before relying on
+  `eef_pose` actions.
+- `success_rate` stays empty: nothing judges success here. Use
+  `robotctl run --ask-success` for success counts.
+
 ## Manual start
 
 ```bash

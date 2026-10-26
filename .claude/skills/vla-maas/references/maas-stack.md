@@ -119,6 +119,14 @@ reach task and needs a Menagerie sparse checkout plus EGL. The default mock
 physics has no articulated robot by design. It is a debugging console, not a
 benchmark: sessions share one process, so use `fleet_sim.py` for timing numbers.
 
+`--robot-config <robot.yaml>` switches the studio to the standard Robot
+protocol (`/act`): it runs the robot file through `vla_maas_robot`'s adapter,
+safety filter and control loop. The default source is a MuJoCo twin
+(`piper_sim.py`, Piper only, spec copied from `PiperDriver`); `--hardware` uses
+the file's real driver and cameras, one session, and needs a browser
+confirmation for `slow`/`live`. `PHYSICS=piper bash apps/vla-maas-studio/run_demo.sh`
+is the CPU demo.
+
 ## Latency budget
 
 An async client stalls only if `latency > prefetch_threshold / control_hz`.

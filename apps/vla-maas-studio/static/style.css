@@ -37,7 +37,7 @@ body {
   font: 14px/1.45 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 h1, h2, h3 { font-weight: 600; }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 button {
   cursor: pointer;
   border: 1px solid var(--accent);
@@ -56,14 +56,14 @@ button.ghost {
   font-size: 12px;
   white-space: nowrap;
 }
-input, select {
+input, select, textarea {
   width: 100%;
   background: var(--panel);
   border: 1px solid var(--rule);
   border-radius: 6px;
   padding: 6px 8px;
 }
-input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 
 .topbar {
   position: sticky;
@@ -128,7 +128,7 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
 .panel section:last-of-type { border-bottom: 0; }
 .panel h2 { font-size: 13px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
 .panel label { display: block; margin-bottom: 9px; font-size: 12px; color: var(--quiet); }
-.panel label input, .panel label select { margin-top: 4px; color: var(--ink); }
+.panel label input, .panel label select, .panel label textarea { margin-top: 4px; color: var(--ink); }
 .panel label.check { display: flex; align-items: center; gap: 8px; }
 .panel label.check input { width: auto; margin: 0; }
 .row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
@@ -297,6 +297,7 @@ summary { cursor: pointer; color: var(--quiet); font-size: 12px; margin: 6px 0 1
   background: rgba(8, 12, 18, 0.62);
 }
 .detail[hidden] { display: none; }
+.empty[hidden] { display: none; }
 .detail-card {
   position: relative;
   width: min(760px, 100%);
@@ -356,3 +357,11 @@ summary { cursor: pointer; color: var(--quiet); font-size: 12px; margin: 6px 0 1
   .metric .v { font-size: 16px; }
   .detail-stats { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Standard Robot protocol mode (studio.py --robot-config). */
+body:not(.mode-act) .act-only { display: none !important; }
+body.mode-act .openpi-only { display: none !important; }
+.tag.danger { background: var(--bad); color: #fff; }
+textarea { box-sizing: border-box; resize: vertical; }
+#detail-robot-text { max-height: 280px; overflow: auto; }
+#robot-summary { margin-bottom: 10px; }

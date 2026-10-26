@@ -81,7 +81,10 @@ vllm serve <ckpt> --omni --deploy-config <yaml>      or  mock_policy_server.py (
   live camera grid, client vs gateway latency): `bash
   apps/vla-maas-studio/run_demo.sh` → `http://127.0.0.1:19100`. Add
   `--physics libero` to `studio.py` for the real simulator; see
-  `apps/vla-maas-studio/README.md`.
+  `apps/vla-maas-studio/README.md`. For a robot file on the standard Robot
+  protocol (Piper twin or real arm): `PHYSICS=piper bash
+  apps/vla-maas-studio/run_demo.sh`, or `studio.py --robot-config <robot.yaml>
+  [--hardware]`.
 - **Simulated multi-arm fleet with video** (robosuite/LIBERO, headless EGL):
   `bash examples/online_serving/vla_maas/sim_fleet_demo.sh <scenario.yaml> <duration-s>`
   or `sim_fleet.py --scenario ... --render-gpus 0,1 --video-dir out/videos --video-grid`.

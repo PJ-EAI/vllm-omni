@@ -9,6 +9,7 @@ on:
     paths:
       - "packages/**"
       - "apps/vla-maas-gateway/**"
+      - "apps/vla-maas-studio/**"
       - "examples/online_serving/vla_maas/**"
       - ".claude/skills/vla-maas/scripts/**"
       - ".github/workflows/vla-maas.yml"
@@ -57,6 +58,9 @@ jobs:
           python -m pip install ./packages/vla-maas-protocol ./packages/vla-maas-robot
       - name: Gateway tests
         working-directory: apps/vla-maas-gateway
+        run: python -m pytest -q
+      - name: Studio tests (Robot protocol; the MuJoCo twin tests skip without mujoco)
+        working-directory: apps/vla-maas-studio
         run: python -m pytest -q
       - name: CPU smoke (mock backend, gateway, LIBERO mock, robot protocol, mock fleet)
         run: bash .claude/skills/vla-maas/scripts/maas_smoke.sh
