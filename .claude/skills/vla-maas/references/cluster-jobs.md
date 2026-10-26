@@ -56,6 +56,22 @@ bash .claude/skills/vla-maas/scripts/serve_and_sweep.sh
 `fleet_sim.py` uses CPU threads/processes for the robots; keep
 `--cpus-per-task` at least `--procs` (default 3) plus a few for the server.
 
+## Simulated fleet jobs (robosuite / LIBERO, video)
+
+One job = server(s) + gateway + `sim_fleet.py`. Request CPUs for the robots
+(one process each; ~1 core per robot at 20 Hz) on top of the server. Rendering
+uses EGL on the same GPUs (`MUJOCO_GL=egl`, `--render-gpus 0,1,...`, physical
+ids); containers need `NVIDIA_DRIVER_CAPABILITIES` to include `graphics`.
+Write `--video-dir`, `--output`, `--episodes-out` under `OUT_DIR`. Check
+`sim_step_p50_ms` before blaming the service for `late_tick_pct`.
+
+```bash
+export MUJOCO_GL=egl
+GATEWAY_CONFIG=$OUT_DIR/gateway.yaml RENDER_GPUS=0,1 OUT_DIR=$OUT_DIR GW_PORT=$GW_PORT \
+  bash examples/online_serving/vla_maas/sim_fleet_demo.sh \
+  examples/online_serving/vla_maas/scenarios/sim_fleet_libero_mixed.yaml 600
+```
+
 ## Serial vs batched (the core MaaS comparison)
 
 Submit two jobs that differ only in `max_num_seqs`:

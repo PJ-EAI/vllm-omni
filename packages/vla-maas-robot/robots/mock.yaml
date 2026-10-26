@@ -1,0 +1,22 @@
+# A CPU-only robot for trying the stack: mock arm, two mock cameras.
+robot_id: mock-01
+gateway:
+  url: ws://127.0.0.1:9000          # wss://<host> behind a TLS proxy on public networks
+  model: pi05_mock                  # the only model-related line: which gateway route to use
+  api_key_env: VLA_MAAS_API_KEY
+driver:
+  kind: mock
+  dof: 6
+cameras:                            # keys are protocol roles, not model camera names
+  front: {kind: mock, width: 320, height: 240, fps: 30}
+  wrist: {kind: mock, width: 320, height: 240, fps: 30, seed: 1}
+calibration:
+  gripper: {raw_range: [0.0, 0.08], invert: false}   # raw opening (m) -> protocol 0..1
+control:
+  prefetch_threshold: 5
+  blend: linear
+  blend_steps: 3
+safety:
+  start_mode: dry_run
+  max_violations: 5
+  stale_ms: 300
