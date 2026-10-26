@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 
@@ -94,6 +95,36 @@ CLONE_HINT = (
 )
 
 
+class Scene(Protocol):
+    """Interface the runner uses; implemented by LIBERO and MuJoCo scenes."""
+
+    task_id: int
+    language: str
+    max_steps: int
+    action_dim: int
+    state_dim: int
+    robot: str
+
+    def init_state(self, episode: int) -> np.ndarray: ...
+
+    def reset(self, init_state: np.ndarray) -> dict: ...
+
+    def step(self, action: np.ndarray) -> tuple[dict, bool]: ...
+
+    def policy_obs(
+        self,
+        raw: dict,
+        prompt: str,
+        session_id: str,
+        base_camera_key: str,
+        wrist_camera_key: str,
+    ) -> dict: ...
+
+    def render(self, raw: dict) -> np.ndarray: ...
+
+    def close(self) -> None: ...
+
+
 def _benchmark_module(physics: str):
     if physics == "mock":
         import mock_libero
@@ -143,7 +174,7 @@ def create_scene(
     action_scale: float = 0.005,
     seed: int = 0,
     menagerie: str = "",
-):
+) -> Scene:
     """Build the backend-specific scene while keeping the runner interface."""
     if physics == "mujoco":
         from mujoco_scenes import MujocoScene
@@ -165,6 +196,13 @@ def create_scene(
         action_scale=action_scale,
         seed=seed,
     )
+
+
+def state_vector(raw: dict) -> np.ndarray:
+    """LIBERO-shaped 8-dim state used by every scene backend."""
+    return np.concatenate(
+        (raw["robot0_eef_pos"], quat2axisangle(raw["robot0_eef_quat"]), raw["robot0_gripper_qpos"])
+    ).astype(np.float32)
 
 
 class SceneSession:
@@ -252,9 +290,7 @@ class SceneSession:
         base_camera_key: str,
         wrist_camera_key: str,
     ) -> dict:
-        state = np.concatenate(
-            (raw["robot0_eef_pos"], quat2axisangle(raw["robot0_eef_quat"]), raw["robot0_gripper_qpos"])
-        ).astype(np.float32)
+        state = state_vector(raw)
         return {
             base_camera_key: np.ascontiguousarray(raw["agentview_image"][::-1, ::-1]),
             wrist_camera_key: np.ascontiguousarray(raw["robot0_eye_in_hand_image"][::-1, ::-1]),

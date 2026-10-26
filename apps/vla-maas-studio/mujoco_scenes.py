@@ -30,9 +30,8 @@ CLIENT_DIR = REPO_ROOT / "examples" / "online_serving" / "vla_maas"
 if str(CLIENT_DIR) not in sys.path:
     sys.path.insert(0, str(CLIENT_DIR))
 
-from libero_eval import quat2axisangle  # noqa: E402
 from mock_libero import EEF_RGB, GOAL_RGB  # noqa: E402
-from scenes import CLONE_HINT, DEFAULT_MENAGERIE, MAX_STEPS, MUJOCO_ARMS  # noqa: E402
+from scenes import CLONE_HINT, DEFAULT_MENAGERIE, MAX_STEPS, MUJOCO_ARMS, state_vector  # noqa: E402
 
 ARM_BY_ID = {arm["id"]: arm for arm in MUJOCO_ARMS}
 
@@ -210,9 +209,7 @@ class MujocoScene:
         wrist_camera_key: str,
     ) -> dict:
         self._ensure_render()
-        state = np.concatenate(
-            (raw["robot0_eef_pos"], quat2axisangle(raw["robot0_eef_quat"]), raw["robot0_gripper_qpos"])
-        ).astype(np.float32)
+        state = state_vector(raw)
         # The wrist view duplicates the agent view until a hand camera is
         # modelled; the mock policy ignores it, and real LIBERO checkpoints are
         # out of distribution here anyway.
@@ -249,7 +246,6 @@ class MujocoScene:
             "robot0_eef_pos": self.data.xpos[self.hand_id].copy(),
             "robot0_eef_quat": quat_xyzw,
             "robot0_gripper_qpos": gripper,
-            "_step": self._step,
         }
 
     def _solve_ik(self) -> None:

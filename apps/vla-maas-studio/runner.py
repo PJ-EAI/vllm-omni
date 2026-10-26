@@ -21,11 +21,10 @@ import time
 import uuid
 from collections import deque
 from dataclasses import asdict, dataclass, field
-from typing import Any
 from urllib.parse import urlsplit
 
 import numpy as np
-from scenes import ACTION_DIM, create_scene
+from scenes import ACTION_DIM, Scene, create_scene
 from vla_client import AsyncChunkExecutor, connect_policy
 
 MAX_ROBOTS = 64
@@ -383,7 +382,7 @@ class Run:
                 if detail is not None:
                     self._push_frame(FRAME_KIND_DETAIL, robot_id, detail)
 
-    def _maybe_push_frame(self, robot_id: int, scene: Any, raw: dict) -> None:
+    def _maybe_push_frame(self, robot_id: int, scene: Scene, raw: dict) -> None:
         if self.config.frame_fps <= 0:
             return
         now = time.perf_counter()
@@ -399,7 +398,7 @@ class Run:
             pass
 
     def _session_loop(self, robot_id: int) -> None:
-        scene: Any = None
+        scene: Scene | None = None
         policy = None
         try:
             self.telemetry.update(
@@ -482,13 +481,13 @@ class Run:
                         policy.infer({"endpoint": "episode_result", "success": success})
                 episode += 1
             self.telemetry.update(robot_id, state="done")
-        except BaseException as exc:  # one robot failing must not take the run down
+        except Exception as exc:  # one robot failing must not take the run down
             self.telemetry.update(robot_id, state="error", error=f"{type(exc).__name__}: {exc}")
         finally:
             if scene is not None:
                 try:
                     scene.close()
-                except BaseException:
+                except Exception:  # best-effort cleanup; the outcome is already recorded
                     pass
             if policy is not None:
                 # openpi-client exposes no close(); release the socket so the
@@ -497,5 +496,5 @@ class Run:
                 if connection is not None:
                     try:
                         connection.close()
-                    except BaseException:
+                    except Exception:  # best-effort cleanup; the socket may already be closed
                         pass

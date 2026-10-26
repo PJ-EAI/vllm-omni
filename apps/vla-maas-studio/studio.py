@@ -85,7 +85,6 @@ class Studio:
             "gateway": {"url": self.gateway_url(), "has_key": bool(self.args.api_key)},
             "limits": {"max_robots": int(self.catalog.get("max_robots", MAX_ROBOTS))},
             "defaults": {
-                "target": "gateway",
                 "robots": 8,
                 "duration_s": 30,
                 "control_hz": 50,

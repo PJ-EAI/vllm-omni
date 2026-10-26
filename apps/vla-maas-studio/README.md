@@ -38,6 +38,7 @@ robot. Use the MuJoCo backend below to see real arms.
 Sparse-clone the arm assets once, then run the same demo with `PHYSICS=mujoco`:
 
 ```bash
+pip install mujoco
 git clone --depth 1 --filter=blob:none --sparse \
     https://github.com/google-deepmind/mujoco_menagerie ~/.cache/mujoco_menagerie
 cd ~/.cache/mujoco_menagerie && git sparse-checkout set \
@@ -87,8 +88,9 @@ python3 apps/vla-maas-studio/studio.py \
 ```
 
 Dependencies: `websockets`, `msgpack`, `msgpack-numpy`, `numpy`, `pillow`,
-`openpi-client`, and `pyyaml` for the gateway. Real scenes need LIBERO and
-robosuite; `--physics libero` selects them.
+`openpi-client`, and `pyyaml` for the gateway. `--physics libero` needs LIBERO
+and robosuite; `--physics mujoco` needs `mujoco` and the Menagerie checkout
+described above.
 
 ## Using it
 
