@@ -82,6 +82,8 @@ policy quality on real images (lessons L002), and its `eef_pose` is the
    "workspace clear" confirmation for `slow` / `live`. Stop holds with motors
    enabled; the studio never homes the arm.
 
+Open real-arm checks for Piper: `apps/vla-maas-studio/TODO.md`.
+
 ## Tests
 
 ```bash
