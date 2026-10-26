@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VLA MaaS Studio</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <h1>VLA MaaS Studio</h1>
+    <span id="conn" class="pill">连接中</span>
+  </div>
+  <div class="topmetrics">
+    <div class="metric"><div class="v" id="m-active">–</div><div class="l">在线 / 机器人</div></div>
+    <div class="metric"><div class="v" id="m-rps">–</div><div class="l">吞吐 req/s</div></div>
+    <div class="metric"><div class="v" id="m-p50">–</div><div class="l">客户端 p50 ms</div></div>
+    <div class="metric"><div class="v" id="m-p99">–</div><div class="l">客户端 p99 ms</div></div>
+    <div class="metric"><div class="v" id="m-relay">–</div><div class="l">网关 relay p50 ms</div></div>
+    <div class="metric"><div class="v" id="m-underrun">–</div><div class="l">underruns</div></div>
+    <div class="metric"><div class="v" id="m-late">–</div><div class="l">late tick</div></div>
+    <div class="metric"><div class="v" id="m-success">–</div><div class="l">成功率</div></div>
+    <div class="metric"><div class="v" id="m-episodes">–</div><div class="l">episodes</div></div>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel">
+    <form id="run-form">
+      <section>
+        <h2>连接目标</h2>
+        <label>方式
+          <select id="target">
+            <option value="gateway">MaaS 网关</option>
+            <option value="direct">直连 backend</option>
+          </select>
+        </label>
+        <div id="gateway-fields">
+          <label>模型 <span class="row"><select id="model"></select><button type="button" id="refresh-models" class="ghost">刷新</button></span></label>
+          <div class="hint" id="gateway-hint"></div>
+        </div>
+        <div id="direct-fields" hidden>
+          <label>WebSocket URL
+            <input id="direct-url" placeholder="ws://host:8000/v1/realtime/robot/openpi">
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h2>场景 <span id="physics" class="tag"></span></h2>
+        <label>机械臂
+          <select id="robot-select"></select>
+        </label>
+        <label>任务套件
+          <select id="suite"></select>
+        </label>
+        <div class="tasks-head">
+          <span>任务</span>
+          <span><button type="button" id="select-all" class="ghost">全选</button><button type="button" id="select-none" class="ghost">清空</button></span>
+        </div>
+        <div id="tasks" class="tasks"></div>
+      </section>
+
+      <section>
+        <h2>运行参数</h2>
+        <div class="grid2">
+          <label>机器人 <input id="robots" type="number" min="1" max="64" value="8"></label>
+          <label>时长 (s) <input id="duration" type="number" min="1" max="3600" value="30"></label>
+          <label>控制频率 <input id="control-hz" type="number" min="0" max="120" value="50"></label>
+          <label>执行步数 <input id="replan" type="number" min="1" max="100" value="20"></label>
+          <label>预取阈值 <input id="prefetch" type="number" min="0" max="100" value="10"></label>
+          <label>分辨率 <select id="resolution"><option value="128">128</option><option value="256" selected>256</option></select></label>
+          <label>画面帧率 <input id="frame-fps" type="number" min="0" max="30" step="0.5" value="2"></label>
+          <label>种子 <input id="seed" type="number" min="0" value="0"></label>
+        </div>
+        <details>
+          <summary>高级</summary>
+          <label>主相机 key <input id="base-camera-key" value="observation.images.image"></label>
+          <label>腕部相机 key <input id="wrist-camera-key" value="observation.images.image2"></label>
+          <label>mock 步长 <input id="action-scale" type="number" step="any" min="0.0001" max="0.1" value="0.005"></label>
+          <label class="check"><input id="report-episodes" type="checkbox" checked> 上报 episode_result</label>
+        </details>
+      </section>
+
+      <div class="actions">
+        <button id="start" type="submit">启动</button>
+        <button id="stop" type="button" class="secondary" disabled>停止</button>
+      </div>
+      <div id="form-error" class="error" hidden></div>
+    </form>
+  </aside>
+
+  <section class="workspace">
+    <div class="chart-card">
+      <div class="chart-head">
+        <h2>全局延迟</h2>
+        <span id="run-state" class="hint">未运行</span>
+      </div>
+      <canvas id="chart" height="120"></canvas>
+      <div class="legend">
+        <span class="dot p50"></span>p50
+        <span class="dot p99"></span>p99
+        <span class="hint">虚线 = 控制周期预算</span>
+      </div>
+    </div>
+    <div id="grid" class="grid"></div>
+    <div id="empty" class="empty">
+      <strong>选择场景和模型后启动</strong>
+      <span>每个机器人有独立的 OpenPI 会话和 50 Hz 控制循环。点击任意画面查看单会话详情。</span>
+    </div>
+  </section>
+</main>
+
+<div id="detail" class="detail" hidden>
+  <div class="detail-card">
+    <button id="detail-close" class="close" aria-label="关闭">×</button>
+    <img id="detail-img" alt="session camera">
+    <h2 id="detail-title">会话详情</h2>
+    <div id="detail-stats" class="detail-stats"></div>
+    <h3>最近动作</h3>
+    <pre id="detail-action">–</pre>
+    <pre id="detail-error" class="error" hidden></pre>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

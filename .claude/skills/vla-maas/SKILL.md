@@ -76,6 +76,11 @@ vllm serve <ckpt> --omni --deploy-config <yaml>      or  mock_policy_server.py (
   `bash apps/vla-maas-gateway/run_demo.sh 8 60`, `MODE=serial` for the
   unbatched baseline. Dashboard at `http://<host>:9000/dashboard`, key
   `dev-key-change-me`.
+- **Open the browser debugging console** (scene/task picker, 1–64 sessions,
+  live camera grid, client vs gateway latency): `bash
+  apps/vla-maas-studio/run_demo.sh` → `http://127.0.0.1:19100`. Add
+  `--physics libero` to `studio.py` for the real simulator; see
+  `apps/vla-maas-studio/README.md`.
 - **Serving-layout sweep on CPU mocks** (serial vs replicas vs batched):
   `ROBOTS="1 4 16" DURATION=10 bash examples/online_serving/vla_maas/concurrency_sweep.sh out.jsonl`.
 - **Serve a real π0.5 checkpoint**: `vllm serve <ckpt> --omni --port 8000

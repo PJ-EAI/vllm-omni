@@ -80,6 +80,25 @@ All take `--host --port --path --api-key`. Direct to a server:
 `--action-scale` must match between `mock_policy_server.py` and the mock env
 (`fleet_sim.py --action-scale`), otherwise mock success drops.
 
+## Studio (`apps/vla-maas-studio/`)
+
+Browser console for the same stack: pick a LIBERO suite/tasks, run 1–64
+concurrent sessions through the gateway or a direct backend, and watch camera
+thumbnails, client p50/p99, gateway relay p50, underruns and per-session errors.
+The studio runs physics server-side and holds the API key; the browser only
+talks to the studio.
+
+```bash
+bash apps/vla-maas-studio/run_demo.sh   # mock backend + gateway + studio
+# http://127.0.0.1:19100
+```
+
+`--physics libero` uses the real LIBERO/robosuite simulator; `--physics
+mujoco` renders MuJoCo Menagerie arms (Panda, UR5e, xArm 7) in a tabletop
+reach task and needs a Menagerie sparse checkout plus EGL. The default mock
+physics has no articulated robot by design. It is a debugging console, not a
+benchmark: sessions share one process, so use `fleet_sim.py` for timing numbers.
+
 ## Latency budget
 
 An async client stalls only if `latency > prefetch_threshold / control_hz`.

@@ -8,7 +8,7 @@ have moved.
 
 | Layer | Owns | Files |
 | --- | --- | --- |
-| Client | Observation building, control loop, async prefetch | `examples/online_serving/vla_maas/{vla_client,libero_eval,fleet_sim,latency_bench}.py` |
+| Client | Observation building, control loop, async prefetch | `examples/online_serving/vla_maas/{vla_client,libero_eval,fleet_sim,latency_bench}.py`, `apps/vla-maas-studio/` (browser console) |
 | MaaS gateway | API keys, model → backend routing, relay, metrics, dashboard | `apps/vla-maas-gateway/{gateway.py,dashboard.html,gateway.example.yaml}` |
 | CLI | `vllm serve ... --omni` flags (`--deploy-config`, `--request-batch-max-wait-ms`, `--robot-openpi-idle-timeout`) | `vllm_omni/entrypoints/cli/serve.py` |
 | HTTP/WS app | Routes, `/health`, `/v1/models`, `WS /v1/realtime/robot/openpi` | `vllm_omni/entrypoints/openai/api_server.py` |
