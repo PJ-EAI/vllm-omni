@@ -88,6 +88,7 @@ class RobotDriver:
 # kind -> "module:Class"; hardware drivers land here as they are added.
 DRIVERS: dict[str, str] = {
     "mock": "vla_maas_robot.drivers.mock:MockDriver",
+    "piper": "vla_maas_robot.drivers.piper:PiperDriver",
 }
 
 

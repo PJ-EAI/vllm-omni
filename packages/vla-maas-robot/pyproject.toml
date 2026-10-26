@@ -16,6 +16,7 @@ dependencies = ["vla-maas-protocol>=0.1,<0.2", "numpy", "pyyaml", "websockets>=1
 jpeg = ["pillow"]
 uvc = ["opencv-python-headless"]
 realsense = ["pyrealsense2"]
+piper = ["piper_sdk>=0.6"]
 test = ["pytest", "pillow"]
 
 [project.scripts]

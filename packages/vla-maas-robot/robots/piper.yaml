@@ -1,0 +1,33 @@
+# AgileX Piper, single arm, on CAN. Bring CAN up first: bash can_activate.sh can0 1000000
+# First run: robotctl check, then run in dry_run (the default), then --mode slow.
+robot_id: piper-01
+gateway:
+  url: wss://gateway.example.com    # cloud gateway behind TLS
+  model: pi05_piper                 # gateway route; the gateway's adapter knows the model
+  api_key_env: VLA_MAAS_API_KEY     # this robot's own key
+driver:
+  kind: piper
+  can_name: can0
+  speed_pct: 30                     # Piper's internal MOVE J speed, % of max
+  gripper_effort_nm: 1.0
+  modes: [joint_pos]
+  home_joints: [0, 0, 0, 0, 0, 0]
+  disable_on_close: false           # a disabled Piper drops under gravity
+cameras:
+  front: {kind: realsense, width: 640, height: 480, fps: 30}
+  wrist: {kind: uvc, device: 0, width: 640, height: 480, fps: 30}
+calibration:
+  gripper: {raw_range: [0.0, 0.07], invert: false}   # jaw opening (m) -> protocol 0..1
+control:
+  prefetch_threshold: 5
+  blend: linear
+  blend_steps: 3
+  jpeg_quality: 85                  # JPEG over the public link
+safety:
+  start_mode: dry_run
+  joint_margin_rad: 0.0            # Piper rests at its joint-2/3 limits (0 rad); a margin would clamp every rest-pose target
+  max_joint_step_rad: 0.05
+  slow_scale: 0.3
+  max_violations: 5
+  stale_ms: 300
+  workspace: {x: [0.05, 0.6], y: [-0.4, 0.4], z: [0.02, 0.5]}
