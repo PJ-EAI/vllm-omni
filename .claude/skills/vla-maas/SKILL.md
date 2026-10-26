@@ -1,6 +1,6 @@
 ---
 name: vla-maas
-description: Orient in vllm-omni and develop, run, test and benchmark the VLA MaaS stack (OpenPI policy serving, Pi05 request batching, the API-key gateway, mock backends, fleet/LIBERO clients), locally or as cluster jobs. Use for any VLA serving, MaaS gateway, robot-policy benchmark or embodied-model task in this repo.
+description: Orient in vllm-omni and develop, run, test and benchmark the VLA MaaS stack (OpenPI policy serving, Pi05 request batching, the API-key gateway, the standard Robot protocol and robot client with the AgileX Piper driver, the studio browser console with its MuJoCo Piper twin, mock backends, fleet/LIBERO clients), locally or as cluster jobs. Use for any VLA serving, MaaS gateway, real-robot or robot-policy benchmark or embodied-model task in this repo.
 ---
 
 # VLA MaaS on vllm-omni
@@ -24,6 +24,7 @@ under `.claude/skills/vla-maas/`.
 | --- | --- |
 | Understand how a request flows, where to change what | [references/architecture.md](references/architecture.md) |
 | Gateway API, OpenPI wire protocol, observation schema, client tools | [references/maas-stack.md](references/maas-stack.md) |
+| Connect a real arm (robot client, Piper), test it in the studio twin, bring-up order | [references/robots.md](references/robots.md) |
 | Which VLA models exist, their deploy configs and status | [references/models.md](references/models.md) |
 | Which test or benchmark proves a claim, exact commands | [references/testing.md](references/testing.md) |
 | Running any of this as a batch/cluster job | [references/cluster-jobs.md](references/cluster-jobs.md) |
@@ -35,6 +36,7 @@ and use `vllm-omni-test` when adding tests, `precheck-pr` before a PR.
 
 ```text
 real robot (packages/vla-maas-robot, robotctl)      fleet_sim / libero_eval (openpi-client)
+apps/vla-maas-studio --robot-config (twin/real)      apps/vla-maas-studio (OpenPI scenes)
   │  wss://gw/v1/robot/<model>/act?robot_id=..       │  ws://gw:9000/v1/robot/<model>/openpi
   │  standard Robot protocol (packages/vla-maas-protocol), model-agnostic
   ▼                                                  ▼
@@ -96,9 +98,12 @@ vllm serve <ckpt> --omni --deploy-config <yaml>      or  mock_policy_server.py (
   --deploy-config examples/online_serving/vla_maas/pi05_libero.yaml --enforce-eager`.
   Camera keys sent by clients must match the checkpoint's `input_features`.
 - **Connect a robot (any arm) through the standard protocol**: driver in
-  `packages/vla-maas-robot/vla_maas_robot/drivers/`, robot yaml, `robotctl check`
-  then `robotctl run` (dry_run first). The model needs an `adapter:` block in
-  the gateway yaml (`apps/vla-maas-gateway/model_adapters.py` docstring).
+  `packages/vla-maas-robot/vla_maas_robot/drivers/` (`mock`, `piper` today),
+  robot yaml, `robotctl check` then `robotctl run` (dry_run first). The model
+  needs an `adapter:` block in the gateway yaml
+  (`apps/vla-maas-gateway/model_adapters.py` docstring). Without hardware, run
+  the same yaml in the studio's MuJoCo twin first; full order and the Piper
+  rest-pose pitfall are in `references/robots.md`.
 - **Put a model behind the gateway**: add `models.<name>.backends: [ws://host:port/v1/realtime/robot/openpi, ...]`
   to a gateway yaml (copy `apps/vla-maas-gateway/gateway.example.yaml`).
   Several backends = replica data parallel, least-loaded per session.
