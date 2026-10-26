@@ -100,6 +100,33 @@ All take `--host --port --path --api-key`. Direct to a server:
 `--action-scale` must match between `mock_policy_server.py` and the mock env
 (`fleet_sim.py --action-scale`), otherwise mock success drops.
 
+## Studio (`apps/vla-maas-studio/`)
+
+Browser console for the same stack: pick a LIBERO suite/tasks, run 1–64
+concurrent sessions through the gateway or a direct backend, and watch camera
+thumbnails, client p50/p99, gateway relay p50, underruns and per-session errors.
+The studio runs physics server-side and holds the API key; the browser only
+talks to the studio.
+
+```bash
+bash apps/vla-maas-studio/run_demo.sh   # mock backend + gateway + studio
+# http://127.0.0.1:19100
+```
+
+`--physics libero` uses the real LIBERO/robosuite simulator; `--physics
+mujoco` renders MuJoCo Menagerie arms (Panda, UR5e, xArm 7) in a tabletop
+reach task and needs a Menagerie sparse checkout plus EGL. The default mock
+physics has no articulated robot by design. It is a debugging console, not a
+benchmark: sessions share one process, so use `fleet_sim.py` for timing numbers.
+
+`--robot-config <robot.yaml>` switches the studio to the standard Robot
+protocol (`/act`): it runs the robot file through `vla_maas_robot`'s adapter,
+safety filter and control loop. The default source is a MuJoCo twin
+(`piper_sim.py`, Piper only, spec copied from `PiperDriver`); `--hardware` uses
+the file's real driver and cameras, one session, and needs a browser
+confirmation for `slow`/`live`. `PHYSICS=piper bash apps/vla-maas-studio/run_demo.sh`
+is the CPU demo.
+
 ## Latency budget
 
 An async client stalls only if `latency > prefetch_threshold / control_hz`.
