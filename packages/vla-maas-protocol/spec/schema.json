@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "maas-robot/1",
+  "title": "VLA MaaS standard Robot protocol, handshake and control messages",
+  "description": "Frames are MessagePack maps. obs and actions frames carry NumPy arrays (openpi-client ndarray maps) and are specified in robot_protocol.md.",
+  "$defs": {
+    "role": {"enum": ["front", "top", "left", "right", "wrist", "wrist_left", "wrist_right"]},
+    "field": {"enum": ["joint_pos", "joint_vel", "eef_pose", "gripper"]},
+    "space": {"enum": ["joint_pos", "eef_pose"]},
+    "protocol": {"type": "string", "pattern": "^maas-robot/[0-9]+$"},
+    "server_hello": {
+      "type": "object",
+      "required": ["type", "protocol", "model", "requires", "provides"],
+      "properties": {
+        "type": {"const": "server_hello"},
+        "protocol": {"$ref": "#/$defs/protocol"},
+        "model": {"type": "string"},
+        "requires": {
+          "type": "object",
+          "required": ["images", "state"],
+          "properties": {
+            "images": {
+              "type": "object",
+              "propertyNames": {"$ref": "#/$defs/role"},
+              "additionalProperties": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}
+            },
+            "state": {"type": "array", "items": {"$ref": "#/$defs/field"}}
+          }
+        },
+        "provides": {
+          "type": "object",
+          "required": ["space", "fields", "horizon", "control_hz"],
+          "properties": {
+            "space": {"$ref": "#/$defs/space"},
+            "fields": {"type": "array", "items": {"$ref": "#/$defs/field"}},
+            "horizon": {"type": "integer", "minimum": 1},
+            "control_hz": {"type": "number", "exclusiveMinimum": 0}
+          }
+        }
+      }
+    },
+    "robot_hello": {
+      "type": "object",
+      "required": ["type", "protocol", "robot_id", "embodiment", "dof", "images", "state", "action_spaces"],
+      "properties": {
+        "type": {"const": "robot_hello"},
+        "protocol": {"$ref": "#/$defs/protocol"},
+        "robot_id": {"type": "string"},
+        "embodiment": {"type": "string"},
+        "dof": {"type": "integer", "minimum": 1},
+        "images": {"type": "array", "items": {"$ref": "#/$defs/role"}},
+        "state": {"type": "array", "items": {"$ref": "#/$defs/field"}},
+        "action_spaces": {"type": "array", "items": {"$ref": "#/$defs/space"}},
+        "image_encodings": {"type": "array", "items": {"enum": ["raw", "jpeg"]}}
+      }
+    },
+    "ready": {
+      "type": "object",
+      "required": ["type", "session_id"],
+      "properties": {"type": {"const": "ready"}, "session_id": {"type": "string"}}
+    },
+    "error": {
+      "type": "object",
+      "required": ["type", "code", "message"],
+      "properties": {
+        "type": {"const": "error"},
+        "code": {"type": "string"},
+        "message": {"type": "string"},
+        "problems": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "stop": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {"type": {"const": "stop"}, "reason": {"type": "string"}}
+    },
+    "control": {
+      "oneOf": [
+        {"type": "object", "required": ["type"], "properties": {"type": {"const": "reset"}}},
+        {
+          "type": "object",
+          "required": ["type", "success"],
+          "properties": {"type": {"const": "episode_result"}, "success": {"type": "boolean"}}
+        },
+        {"type": "object", "required": ["type"], "properties": {"type": {"const": "ok"}}}
+      ]
+    }
+  }
+}

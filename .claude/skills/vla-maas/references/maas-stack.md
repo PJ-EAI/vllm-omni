@@ -62,6 +62,22 @@ names with `model_config.image_key_map` in the deploy yaml. The clients default
 to `observation.images.image` / `observation.images.image2`; override with
 `--base-camera-key` / `--wrist-camera-key`.
 
+## Standard Robot protocol (`/act`)
+
+`WS /v1/robot/<model>/act?robot_id=<id>[&embodiment=<e>]`, spec in
+`packages/vla-maas-protocol/spec/robot_protocol.md`. Handshake:
+`server_hello` (model `requires` cameras by role + state fields, `provides`
+space/horizon/control_hz) → `robot_hello` → `ready` or `error` + close 4400.
+Then `obs` → `actions` (absolute targets, `server_ms`) | `stop` | `error`.
+Only models with an `adapter:` block in the gateway yaml are served here
+(404 otherwise). Robot keys (`robots.<id>.api_key`) work only on `/act` for
+that robot and its `models`; `api_keys` are operator keys.
+`GET /v1/robots`, `GET /v1/robots/<id>/stop`, `GET /v1/models/<model>`.
+
+Robot side: `pip install ./packages/vla-maas-protocol ./packages/vla-maas-robot`,
+then `robotctl check|run|home --robot <yaml>` (`packages/vla-maas-robot/robots/mock.yaml`).
+`run` defaults to `dry_run`.
+
 ## Client tools (`examples/online_serving/vla_maas/`)
 
 All take `--host --port --path --api-key`. Direct to a server:

@@ -18,7 +18,8 @@ claim needs. Each rung lists what it proves and what it does not.
 
 | Changed | Run |
 | --- | --- |
-| `apps/vla-maas-gateway/*` | T0 (+ T2 if routing/load behaviour changed) |
+| `apps/vla-maas-gateway/*` | `cd apps/vla-maas-gateway && pytest -q`, T0 (+ T2 if routing/load behaviour changed) |
+| `packages/vla-maas-protocol/*`, `packages/vla-maas-robot/*` | `pytest -q` inside each package (only those two packages installed), gateway tests, T0 |
 | `examples/online_serving/vla_maas/*` | T0 and the edited tool's own mock run |
 | `sim_envs.py`, `sim_fleet.py`, video tools | T0 (mock sim stage), plus a short robosuite run (`MUJOCO_GL=osmesa` works on CPU) |
 | `vllm_omni/entrypoints/openpi/*` | T1 openpi tests, then T5 |
