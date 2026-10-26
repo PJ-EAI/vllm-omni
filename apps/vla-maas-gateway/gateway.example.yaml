@@ -1,11 +1,14 @@
-# Single-tenant gateway config. Keys can also come from VLA_MAAS_API_KEY.
+# Gateway config. Operator keys can also come from VLA_MAAS_API_KEY.
 api_keys:
   - dev-key-change-me
 
-# Seconds to wait for one inference reply before failing the session.
+# Seconds to wait for one inference reply before failing the request.
 request_timeout_s: 5.0
 
-# Each model lists vllm-omni OpenPI endpoints; sessions go to the least-loaded one.
+# Each model lists OpenPI endpoints (vllm-omni or any OpenPI server); sessions go
+# to the least-loaded one. Native OpenPI clients use /v1/robot/<model>/openpi.
+# A model with an `adapter` is also served on the standard Robot protocol,
+# /v1/robot/<model>/act, which robots use without knowing the model's keys.
 models:
   pi05:
     backends:
@@ -13,3 +16,35 @@ models:
   internvla_a1:
     backends:
       - ws://127.0.0.1:8002/v1/realtime/robot/openpi
+  # The CPU mock backend (mock_policy_server.py --idle-motion 0.05) seen as a
+  # joint-space policy: delta joint targets in columns 0-5, gripper in column 6.
+  pi05_mock:
+    backends:
+      - ws://127.0.0.1:8001/v1/realtime/robot/openpi
+    adapter:
+      kind: generic
+      images: {front: observation.images.image, wrist: observation.images.image2}
+      image_size: [224, 224]
+      state: [joint_pos, {field: gripper, range: [-1, 1]}]
+      state_dim: 32
+      action:
+        space: joint_pos
+        layout: [{field: joint_pos, mode: delta}, {field: gripper, range: [-1, 1]}]
+      control_hz: 20
+  # Shape of an entry for a real joint-space π0.5 fine-tune (keys must match the
+  # checkpoint's input_features; ranges match its training data):
+  # pi05_piper:
+  #   backends: [ws://10.0.0.20:8001/v1/realtime/robot/openpi]
+  #   adapter:
+  #     kind: generic
+  #     images: {front: observation.images.base_0_rgb, wrist: observation.images.left_wrist_0_rgb}
+  #     state: [joint_pos, {field: gripper, range: [0, 1]}]
+  #     action: {space: joint_pos, layout: [joint_pos, {field: gripper, range: [0, 1]}]}
+  #     control_hz: 30
+  #     embodiments: [piper]
+
+# Robot keys: valid only on /act, only for that robot_id and its models.
+robots:
+  mock-01:
+    api_key: mock-01-key-change-me     # or api_key_env: MOCK_01_KEY
+    models: [pi05_mock]
