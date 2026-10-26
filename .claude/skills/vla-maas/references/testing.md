@@ -20,6 +20,7 @@ claim needs. Each rung lists what it proves and what it does not.
 | --- | --- |
 | `apps/vla-maas-gateway/*` | `cd apps/vla-maas-gateway && pytest -q`, T0 (+ T2 if routing/load behaviour changed) |
 | `packages/vla-maas-protocol/*`, `packages/vla-maas-robot/*` | `pytest -q` inside each package (only those two packages installed), gateway tests, T0 |
+| `apps/vla-maas-studio/*` | `cd apps/vla-maas-studio && pytest -q` (twin tests need `mujoco` + Menagerie `agilex_piper`), the edited mode's `run_demo.sh` (`PHYSICS=mock|mujoco|piper`) |
 | `examples/online_serving/vla_maas/*` | T0 and the edited tool's own mock run |
 | `sim_envs.py`, `sim_fleet.py`, video tools | T0 (mock sim stage), plus a short robosuite run (`MUJOCO_GL=osmesa` works on CPU) |
 | `vllm_omni/entrypoints/openpi/*` | T1 openpi tests, then T5 |

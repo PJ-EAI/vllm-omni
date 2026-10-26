@@ -114,6 +114,7 @@ python3 apps/vla-maas-studio/studio.py --robot-config my-piper.yaml --hardware
   end-effector position, the last command after the safety filter, clamp
   counts and reasons, round trip / server / network p50, and the handshake's
   `requires` / `provides`.
+- **Real-arm checks still to do** are tracked in [TODO.md](TODO.md).
 - **Order for a first real run**: twin with the real file, then `--hardware`
   in `dry_run`, then `slow`, then `live`.
 

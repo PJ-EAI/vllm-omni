@@ -76,6 +76,7 @@ before enabling it.
 | New VLA model | `vllm_omni/diffusion/models/<m>/`, registry entry, `<m>_pipeline_config.py`, `vllm_omni/deploy/<m>.yaml`, recipe; see the `add-diffusion-model` skill |
 | Robot-protocol change | `packages/vla-maas-protocol/` (spec + schema + version bump if breaking); keep the previous major accepted |
 | New real arm | `packages/vla-maas-robot/vla_maas_robot/drivers/<arm>.py`, register in `driver.DRIVERS`, a `robots/<arm>.yaml`, an extra for its SDK |
+| Studio twin for an arm | a `RobotDriver` + `Camera` pair like `apps/vla-maas-studio/piper_sim.py` that copies the real driver's spec, listed in `SIM_TWINS` and built in `ActRun._driver_and_cameras` (`robot_run.py`) |
 | A model on `/act` | `adapter:` under the model in the gateway yaml; a new `kind` in `model_adapters.ADAPTERS` only when the native output is not one action array |
 | Native OpenPI change | `entrypoints/openpi/` plus `docs/serving/openpi_api.md` |
 | Non-policy level (planner, world model) | New endpoint family under `vllm_omni/entrypoints/`, gateway route, orchestration in `apps/` |
