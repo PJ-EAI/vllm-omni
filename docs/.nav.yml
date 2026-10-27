@@ -21,6 +21,7 @@ nav:
         - Streaming Video Input: serving/video_stream_api.md
         - Streaming Video Output: serving/streaming_video_output_api.md
         - OpenPI Robot Policy: serving/openpi_api.md
+        - VLA MaaS for Remote Piper Arms: serving/vla_maas_piper_deployment.md
       - Standalone Experimental Servers: serving/standalone_servers.md
   - Examples:
     - examples/README.md

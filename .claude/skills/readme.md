@@ -61,6 +61,12 @@ self-check.
   stack (OpenPI serving, request batching, gateway, mock backends, fleet and
   LIBERO clients) and gives CPU smoke tests and cluster-job scripts for
   serving and benchmarking VLAs
+- [`vla-maas-deploy-server`](vla-maas-deploy-server/SKILL.md): deploys the VLA
+  MaaS server side for remote real arms: π0.5 backends per GPU, gateway config
+  with per-robot keys, TLS proxy and public-path verification
+- [`vla-maas-deploy-robot`](vla-maas-deploy-robot/SKILL.md): deploys the
+  standalone robot client on an arm PC (AgileX Piper): install, robot YAML,
+  CAN, `robotctl check`, dry_run bring-up and its latency/safety summary
 - [`vllm-omni-npu-model-runner-upgrade`](vllm-omni-npu-upgrade/SKILL.md):
   upgrades NPU model runners to align with the latest vllm-ascend
   `NPUModelRunner`
