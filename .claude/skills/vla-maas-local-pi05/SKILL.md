@@ -1,6 +1,6 @@
 ---
 name: vla-maas-local-pi05
-description: Bring up a real π0.5 model, the VLA MaaS gateway with its live dashboard, and a simulated Piper arm (MuJoCo twin in the studio) on one local GPU machine with uv environments, then check the dashboard and tear it down. Use when someone wants to try or demo the MaaS stack end to end on a single workstation (e.g. an RTX 50-series PC) with a real checkpoint instead of the mock backend; use vla-maas-deploy-server for a cluster serving remote arms.
+description: Bring up a real π0.5 model, the VLA MaaS gateway with its live dashboard, and a simulated Piper arm (MuJoCo twin in the studio) on one local GPU machine with uv environments, then check the dashboard and tear it down; or start only the MuJoCo Piper client (twin.sh) against a running gateway. Use when someone wants to try or demo the MaaS stack end to end on a single workstation (e.g. an RTX 50-series PC) with a real checkpoint instead of the mock backend, or to connect a simulated Piper to a local or remote gateway; use vla-maas-deploy-server for a cluster serving remote arms.
 ---
 
 # π0.5 + gateway + Piper twin on one machine
@@ -68,10 +68,7 @@ Run from the repo root on a branch that has the live dashboard (`/v1/monitor`).
      gateway config (`pi05_piper` route, Piper adapter, robot `piper-01`, keys kept
      across runs), starts the gateway and the studio, then prints the URLs and the
      operator key.
-   - The twin file is `packages/vla-maas-robot/robots/piper.yaml` with a ready pose and
-     `max_violations` raised (`TWIN_MAX_VIOLATIONS`): pi05_base's targets are mostly
-     clamped, and the default rule would stop every episode within seconds. The script
-     never passes `--hardware`.
+   - The studio is started by `twin.sh` (below) with the operator key.
    - `MOCK=1` swaps π0.5 for the CPU mock: a rehearsal with no GPU.
    - No EGL (headless box without an NVIDIA GL stack): `MUJOCO_GL=osmesa PYOPENGL_PLATFORM=osmesa`.
 
@@ -88,7 +85,25 @@ Run from the repo root on a branch that has the live dashboard (`/v1/monitor`).
    - Press 停止 in the drawer: the twin holds, the studio card ends as 已结束（有错误）
      and `studio.log` says `episode stopped: gateway stop: operator stop (dashboard)`.
 
-5. **Stop**:
+5. **Only the MuJoCo Piper client** (the gateway runs already, here or elsewhere):
+
+   ```bash
+   bash .claude/skills/vla-maas-local-pi05/scripts/twin.sh                       # up.sh's gateway and operator key
+   GATEWAY=https://<domain> API_KEY=<key> bash .claude/skills/vla-maas-local-pi05/scripts/twin.sh
+   ```
+
+   - Needs only `.venv-maas` and the Piper model (`ONLY=maas setup_envs.sh`); no GPU.
+   - Checks `/healthz` and that the key can read `/v1/models/$MODEL` before starting.
+   - The twin file is `packages/vla-maas-robot/robots/piper.yaml` with `robot_id`,
+     gateway URL and model set, a ready pose, and `max_violations` raised
+     (`TWIN_MAX_VIOLATIONS`): pi05_base's targets are mostly clamped, and the default
+     rule would stop every episode within seconds. The studio runs without `--hardware`.
+   - A robot key (`maas_runs/local-pi05/deploy/keys/piper-01.env`) runs one twin as its
+     own `robot_id`; several twins at once (the studio's 机器人 field, up to 8, ids
+     `piper-01-<n>`) need an operator key.
+   - `MODEL=`, `ROBOT_ID=`, `STUDIO_PORT=` change the route, id and port.
+
+6. **Stop**:
 
    ```bash
    bash .claude/skills/vla-maas-local-pi05/scripts/down.sh

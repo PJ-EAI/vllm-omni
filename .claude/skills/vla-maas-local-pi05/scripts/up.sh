@@ -76,33 +76,8 @@ curl -sf -H "Authorization: Api-Key $VLA_MAAS_OPERATOR_KEY" "http://127.0.0.1:$G
 
 # 3. Studio with the Piper twin -------------------------------------------------
 if [ "${SKIP_STUDIO:-0}" != 1 ]; then
-  [ -f "$MENAGERIE/agilex_piper/piper.xml" ] || { echo "no Piper model under $MENAGERIE; run setup_envs.sh" >&2; exit 1; }
-  # The real robot file; the twin starts from a ready pose instead of the joint-limit rest pose.
-  "$MAAS_PY" - packages/vla-maas-robot/robots/piper.yaml "$RUN_DIR/piper.yaml" "${ROBOTS%%,*}" \
-    "${TWIN_MAX_VIOLATIONS:-100000}" <<'PY'
-import sys
-
-import yaml
-
-robot = yaml.safe_load(open(sys.argv[1]))
-robot["robot_id"] = sys.argv[3]
-robot["driver"]["home_joints"] = [0.0, 1.0, -1.0, 0.0, 0.4, 0.0]
-# Twin only (this script never passes --hardware): pi05_base is not trained on Piper, so most of
-# its targets get clamped and the default 5-in-a-row rule would end every episode within seconds.
-# Clamping still bounds each step; the real arm keeps the file's own limit.
-robot["safety"]["max_violations"] = int(sys.argv[4])
-yaml.safe_dump(robot, open(sys.argv[2], "w"), sort_keys=False)
-PY
-  mkdir -p "$RUN_DIR/studio"
-  "$MAAS_PY" apps/vla-maas-studio/studio.py --host 127.0.0.1 --port "$STUDIO_PORT" \
-    --robot-config "$RUN_DIR/piper.yaml" --gateway "http://127.0.0.1:$GW_PORT" \
-    --api-key "$VLA_MAAS_OPERATOR_KEY" --menagerie "$MENAGERIE" >"$RUN_DIR/studio/studio.log" 2>&1 &
-  echo $! >"$RUN_DIR/studio/studio.pid"
-  for _ in $(seq 1 100); do
-    curl -sf "http://127.0.0.1:$STUDIO_PORT/healthz" >/dev/null 2>&1 && break
-    kill -0 "$(cat "$RUN_DIR/studio/studio.pid")" 2>/dev/null || { echo "studio exited; see $RUN_DIR/studio/studio.log" >&2; exit 1; }
-    sleep 0.2
-  done
+  GATEWAY="http://127.0.0.1:$GW_PORT" API_KEY="$VLA_MAAS_OPERATOR_KEY" ROBOT_ID="${ROBOTS%%,*}" \
+    STUDIO_PORT="$STUDIO_PORT" RUN_DIR="$RUN_DIR" MENAGERIE="$MENAGERIE" bash "$(dirname "${BASH_SOURCE[0]}")/twin.sh"
 fi
 
 cat <<INFO

@@ -66,7 +66,8 @@ self-check.
   with per-robot keys, TLS proxy and public-path verification
 - [`vla-maas-local-pi05`](vla-maas-local-pi05/SKILL.md): brings up a real
   π0.5 backend, the gateway with its live dashboard and a Piper MuJoCo twin on
-  one local GPU machine with uv environments, then checks and stops it
+  one local GPU machine with uv environments, or only the MuJoCo Piper client
+  against a running gateway
 - [`vla-maas-deploy-robot`](vla-maas-deploy-robot/SKILL.md): deploys the
   standalone robot client on an arm PC (AgileX Piper): install, robot YAML,
   CAN, `robotctl check`, dry_run bring-up and its latency/safety summary
