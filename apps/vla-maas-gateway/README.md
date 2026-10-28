@@ -24,8 +24,17 @@ mock in `examples/online_serving/vla_maas/mock_policy_server.py`) and adds:
   (the websockets HTTP server accepts only GET). This is not an e-stop: keep a
   hardware e-stop at every robot. `GET /v1/models/<model>` shows what a model
   requires and provides on `/act`.
-- **Dashboard**: `GET /dashboard`, a live panel that polls `/metrics` with the key
-  typed into it.
+- **Dashboard**: `GET /dashboard`, a live fleet view for operators. It shows each
+  model's backends and their load, one-second p50/p99 and throughput history,
+  and every connected session (`/act` robots and native OpenPI clients). Click a
+  session to see the camera frames the model receives, the robot state, the
+  latest action chunk, recent latency, events and errors, and to stop an `/act`
+  robot. The page holds no data and asks for an operator key.
+- **Monitor socket**: `WS /v1/monitor`, the dashboard's data feed (JSON frames).
+  Send `{"type": "auth", "key": "<operator key>"}` first, then
+  `{"type": "watch", "session_id": ..., "fps": 5}` to receive `detail` frames for
+  one session; a `snapshot` arrives every second. Images are JPEG-encoded off the
+  event loop and only for watched sessions; see `monitor.py` for the messages.
 - **Metrics**: `GET /metrics` returns per-model request/error counts, active
   sessions and relay p50/p99. `GET /v1/models` lists models, `GET /healthz` is open.
 
@@ -51,8 +60,8 @@ the gateway, and a concurrent fleet of mock robots per model (own session, own
 50 Hz loop). `MODE=batched` (default) lets each backend batch overlapping
 requests; `MODE=serial` runs them one at a time, like a replica with `max_num_seqs: 1`. Open
 `http://localhost:9000/dashboard` and enter the API key (`dev-key-change-me`) to
-watch success rate, p50/p99 relay latency against the 100 ms budget, throughput
-and online robots per model. Robots send
+watch success rate, p50/p99 relay latency against the 100 ms budget, throughput,
+backend load and every connected robot; click a robot to see its camera frames. Robots send
 `{"endpoint": "episode_result", "success": bool}` after each episode; the gateway
 counts it and does not forward it.
 

@@ -95,7 +95,8 @@ started and where its logs are.
 
 ## Operating
 
-- **Live view:** `https://<domain>/dashboard` (operator key), `GET /metrics`
+- **Live view:** `https://<domain>/dashboard` (operator key; per-arm camera
+  frames and state through `WS /v1/monitor`), `GET /metrics`
   (`relay_p99_ms`, active sessions per model) and `GET /v1/robots`.
 - **Stop one robot:** `curl -H "Authorization: Api-Key $VLA_MAAS_OPERATOR_KEY" https://<domain>/v1/robots/<id>/stop`.
   This is a software stop; every arm still needs its hardware e-stop.

@@ -6,6 +6,9 @@ Needs vla-maas-protocol, vla-maas-robot, openpi-client and websockets.
 """
 
 import asyncio
+import base64
+import contextlib
+import io
 import json
 import socket
 import subprocess
@@ -218,3 +221,85 @@ def test_robotctl_runs_mock_robot(stack, tmp_path):
     line = json.loads(out.read_text())
     assert line["stopped"] is None and line["commands_sent"] > 30 and line["inferences"] >= 2
     assert line["network_p50_ms"] is not None and line["safety"]["worst_streak"] < 5
+
+
+@contextlib.contextmanager
+def _monitor(stack, key=OPERATOR):
+    with connect(f"{stack['gw']}/v1/monitor") as ws:
+        ws.send(json.dumps({"type": "auth", "key": key}))
+        yield ws
+
+
+def _next(ws, kind, timeout=5.0, where=lambda msg: True):
+    deadline = time.time() + timeout
+    while True:
+        msg = json.loads(ws.recv(timeout=max(0.1, deadline - time.time())))
+        if msg["type"] == kind and where(msg):
+            return msg
+
+
+def _jpeg_size(b64):
+    from PIL import Image
+
+    return Image.open(io.BytesIO(base64.b64decode(b64))).size
+
+
+def test_monitor_requires_operator_key(stack):
+    for key in ("wrong", ROBOT_KEY):
+        with _monitor(stack, key) as ws, pytest.raises(ConnectionClosed) as closed:
+            ws.recv(timeout=5)
+        assert closed.value.rcvd.code == 4401
+
+
+def test_monitor_lists_watches_and_stops_act_session(stack):
+    client = PolicyClient(stack["gw"], "mock", "piper-01", ROBOT_KEY, embodiment="piper")
+    client.connect(_hello())
+    try:
+        assert client.request(_obs())["type"] == "actions"
+        with _monitor(stack) as ws:
+            hello = _next(ws, "hello")
+            assert len(hello["models"]["mock"]) > 0  # zero-filled one-second history
+            snap = _next(ws, "snapshot", where=lambda m: any(s["robot_id"] == "piper-01" for s in m["sessions"]))
+            row = next(s for s in snap["sessions"] if s["robot_id"] == "piper-01")
+            assert (row["kind"], row["status"], row["instruction"], row["requests"]) == ("act", "running", "wave", 1)
+            assert row["embodiment"] == "piper" and row["can_stop"] and row["peer"].startswith("127.0.0.1")
+            assert snap["models"]["mock"]["backends"][0]["active"] >= 1
+            ws.send(json.dumps({"type": "watch", "session_id": row["session_id"], "fps": 10}))
+            detail = _next(ws, "detail", where=lambda m: "frames" in m)
+            assert {role: _jpeg_size(b64) for role, b64 in detail["frames"].items()} == {
+                "front": (64, 64),
+                "wrist": (64, 64),
+            }
+            assert detail["state"]["joint_pos"] == [0.5] * 6
+            assert len(detail["actions"]["joint_pos"]) == 20 and len(detail["actions"]["joint_pos"][0]) == 6
+            assert [e["kind"] for e in detail["events"]][:2] == ["connected", "ready"]
+            ws.send(json.dumps({"type": "stop", "session_id": row["session_id"], "reason": "dashboard"}))
+            assert _next(ws, "stop_ack")["ok"] is True
+            assert client.request(_obs(2)) == {"type": "stop", "reason": "dashboard"}
+    finally:
+        client.close()
+    with _monitor(stack) as ws:
+        snap = _next(ws, "snapshot", where=lambda m: not any(s["robot_id"] == "piper-01" for s in m["sessions"]))
+        closed = next(s for s in snap["closed"] if s["robot_id"] == "piper-01")
+        assert closed["status"] == "closed" and closed["close_reason"] == "robot disconnected"
+        assert not closed["can_stop"]
+
+
+def test_monitor_watches_native_openpi_session(stack):
+    url = f"{stack['gw']}/v1/robot/native_only/openpi"
+    image = np.full((48, 64, 3), 200, np.uint8)
+    with connect(url, additional_headers={"Authorization": f"Api-Key {OPERATOR}"}) as relay, _monitor(stack) as ws:
+        unpackb(relay.recv(timeout=5))
+        relay.send(packb({"observation.images.image": image, "observation.state": np.ones(8), "prompt": "stack"}))
+        relay.recv(timeout=5)
+        snap = _next(ws, "snapshot", where=lambda m: any(s["model"] == "native_only" for s in m["sessions"]))
+        row = next(s for s in snap["sessions"] if s["model"] == "native_only")
+        assert row["kind"] == "openpi" and row["label"].startswith("openpi-") and not row["can_stop"]
+        ws.send(json.dumps({"type": "watch", "session_id": row["session_id"]}))
+        detail = _next(ws, "detail", where=lambda m: "frames" in m)
+        assert _jpeg_size(detail["frames"]["observation.images.image"]) == (64, 48)
+        assert detail["summary"]["instruction"] == "stack"
+        assert detail["state"]["observation.state"] == [1.0] * 8
+        assert len(detail["actions"]["actions"]) == 50
+        ws.send(json.dumps({"type": "stop", "session_id": row["session_id"]}))
+        assert _next(ws, "stop_ack")["ok"] is False

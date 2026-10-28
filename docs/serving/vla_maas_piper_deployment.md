@@ -164,7 +164,9 @@ run the same file on the MuJoCo Piper twin.
   `curl -H "Authorization: Api-Key <operator key>" https://<domain>/v1/robots/<id>/stop`.
   This is a software stop; keep a hardware e-stop at every arm.
 - **Monitoring:** `GET /v1/robots` lists connected arms, and
-  `https://<domain>/dashboard` shows live metrics.
+  `https://<domain>/dashboard` shows backend load, latency history and every
+  connected arm; click an arm to see the camera frames the model receives, its
+  joint state, latest actions and errors.
 
 ## 7. Known limits
 

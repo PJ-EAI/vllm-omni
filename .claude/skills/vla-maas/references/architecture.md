@@ -11,7 +11,7 @@ have moved.
 | Robot protocol | Model-agnostic messages, vocabulary, codec, version (`maas-robot/1`) | `packages/vla-maas-protocol/` (spec in `spec/robot_protocol.md`) |
 | Robot client | Drivers, cameras, safety filter, tick-aligned control loop, `robotctl`; installs without vllm/torch | `packages/vla-maas-robot/` |
 | Client | Observation building, control loop, async prefetch | `examples/online_serving/vla_maas/{vla_client,libero_eval,fleet_sim,latency_bench}.py`; simulators and video: `{sim_envs,sim_fleet,video_recorder,video_grid}.py`; `apps/vla-maas-studio/` (browser console) |
-| MaaS gateway | Operator and per-robot keys, model → backend routing, `/act` translation through model adapters, OpenPI relay, metrics, dashboard | `apps/vla-maas-gateway/{gateway.py,model_adapters.py,dashboard.html,gateway.example.yaml}` |
+| MaaS gateway | Operator and per-robot keys, model → backend routing, `/act` translation through model adapters, OpenPI relay, metrics, live fleet view (`/v1/monitor`, dashboard) | `apps/vla-maas-gateway/{gateway.py,model_adapters.py,monitor.py,dashboard.html,gateway.example.yaml}` |
 | CLI | `vllm serve ... --omni` flags (`--deploy-config`, `--request-batch-max-wait-ms`, `--robot-openpi-idle-timeout`) | `vllm_omni/entrypoints/cli/serve.py` |
 | HTTP/WS app | Routes, `/health`, `/v1/models`, `WS /v1/realtime/robot/openpi` | `vllm_omni/entrypoints/openai/api_server.py` |
 | OpenPI protocol | Handshake, msgpack-numpy codec, reset, idle timeout, session ids | `vllm_omni/entrypoints/openpi/connection.py` |
