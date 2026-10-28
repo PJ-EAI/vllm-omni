@@ -64,6 +64,9 @@ self-check.
 - [`vla-maas-deploy-server`](vla-maas-deploy-server/SKILL.md): deploys the VLA
   MaaS server side for remote real arms: π0.5 backends per GPU, gateway config
   with per-robot keys, TLS proxy and public-path verification
+- [`vla-maas-local-pi05`](vla-maas-local-pi05/SKILL.md): brings up a real
+  π0.5 backend, the gateway with its live dashboard and a Piper MuJoCo twin on
+  one local GPU machine with uv environments, then checks and stops it
 - [`vla-maas-deploy-robot`](vla-maas-deploy-robot/SKILL.md): deploys the
   standalone robot client on an arm PC (AgileX Piper): install, robot YAML,
   CAN, `robotctl check`, dry_run bring-up and its latency/safety summary
