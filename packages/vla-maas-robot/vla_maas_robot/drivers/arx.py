@@ -16,6 +16,13 @@ quaternion order is ``xyzw`` — this driver converts both ways.
 The X5 URDF ships placeholder limits, so ``joint_limits`` defaults to a
 conservative +/-2.9 rad until the real values are confirmed from the arm's
 manual and set in the robot yaml. Keep unverified arms in ``dry_run``.
+
+There is no speed knob: the vendor API exposes no speed argument (the
+undocumented ``arx_x(500, 2000, 10)`` gain triple is the only candidate and
+its semantics are unknown), so motion between targets runs at the vendor's
+default speed. The safety filter's per-tick step limit bounds the control
+loop, but ``home()`` sends its whole target at once — first live sessions
+must use ``--mode slow`` and a cleared workspace.
 """
 
 from __future__ import annotations

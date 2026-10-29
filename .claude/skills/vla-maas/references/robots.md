@@ -38,6 +38,22 @@ entry for `render_gateway.py` on the server side.
   hits this. Set `home_joints` to a ready pose (e.g. `[0, 1.0, -1.0, 0, 0.4, 0]`,
   check on the arm) and run `robotctl home` first.
 
+## ARX X5 specifics (`drivers/arx.py`)
+
+- CAN is slcan (CANable2, `slcand -s8`, 1 Mbps) on `can1`/`can3`; bring it up
+  with realarm's own `start_arx_dual_can.sh`, not `can_activate.sh`.
+- The venv must be Python 3.11: the binding `arx_x5_python.cpython-311` is the
+  only build, and `bimanual` imports it from `bimanual_path` on the arm PC.
+- State is seven joint values (six joints + gripper); `get_ee_pose` returns
+  `[x, y, z, qw, qx, qy, qz]` and the driver reorders to the protocol's xyzw.
+- **No speed knob:** the vendor API has no speed argument (the undocumented
+  `arx_x(500, 2000, 10)` gain triple is the only candidate). Motion runs at
+  the vendor default speed; the safety filter bounds only the control loop,
+  and `home()` sends its whole target at once — first live run `--mode slow`.
+- Joint limits and the `set_catch` gripper range in `robots/arx.yaml` are
+  placeholders: confirm from the arm's manual before any motion beyond
+  `dry_run`.
+
 ## Without hardware: the studio's Piper twin
 
 `piper_sim.py` builds `PiperSimDriver` from the same `driver:` block and copies

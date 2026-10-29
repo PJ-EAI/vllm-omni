@@ -11,7 +11,7 @@
 #
 # Env: ROBOT (required), KEY_FILE (file with VLA_MAAS_API_KEY=..., or export it),
 #      INSTRUCTION (default "pick up the cube"), STEPS (default 300), DO_HOME=1 to home first,
-#      CAN=can0 (can1/can3 on an ARX bimanual rig), CAN_SCRIPT (piper: piper_sdk's
+#      CAN (default: the yaml's can_name/can_port, else can0), CAN_SCRIPT (piper: piper_sdk's
 #      can_activate.sh, called as "$CAN_SCRIPT $CAN 1000000"; arx: realarm's
 #      start_arx_dual_can.sh, called as "$CAN_SCRIPT" with no args), ROBOTCTL (default robotctl),
 #      OUT (default ./bringup-<robot_id>.jsonl)
@@ -21,7 +21,6 @@ set -euo pipefail
 ROBOTCTL="${ROBOTCTL:-robotctl}"
 INSTRUCTION="${INSTRUCTION:-pick up the cube}"
 STEPS="${STEPS:-300}"
-CAN="${CAN:-can0}"
 if [ -n "${KEY_FILE:-}" ]; then
   set -a
   # shellcheck disable=SC1090
@@ -31,20 +30,31 @@ fi
 : "${VLA_MAAS_API_KEY:?no robot key: set KEY_FILE or export VLA_MAAS_API_KEY}"
 robot_id="$(sed -n 's/^robot_id: *//p' "$ROBOT" | head -1)"
 OUT="${OUT:-$PWD/bringup-$robot_id.jsonl}"
-
 kind="$(sed -n 's/^ *kind: *//p' "$ROBOT" | head -1)"
+
+# CAN defaults to the interface the robot yaml names (can_name for piper, can_port for arx).
+if [ -z "${CAN:-}" ]; then
+  CAN="$(sed -n 's/^ *can_name: *//p' "$ROBOT" | head -1)"
+  [ -z "$CAN" ] && CAN="$(sed -n 's/^ *can_port: *//p' "$ROBOT" | head -1)"
+  CAN="${CAN:-can0}"
+fi
+
+can_up() { ip link show "$CAN" 2>/dev/null | grep -q "state UP"; }
+
 case "$kind" in
   piper)
-    if ! ip link show "$CAN" 2>/dev/null | grep -q "state UP"; then
+    if ! can_up; then
       [ -n "${CAN_SCRIPT:-}" ] || { echo "$CAN is down; run piper_sdk's can_activate.sh $CAN 1000000 or set CAN_SCRIPT" >&2; exit 1; }
       bash "$CAN_SCRIPT" "$CAN" 1000000
+      can_up || { echo "$CAN still down after CAN_SCRIPT" >&2; exit 1; }
     fi
     echo "ok   $CAN up"
     ;;
   arx)  # slcan via realarm's scripts; their script brings all ARX ports up itself
-    if ! ip link show "$CAN" 2>/dev/null | grep -q "state UP"; then
+    if ! can_up; then
       [ -n "${CAN_SCRIPT:-}" ] || { echo "$CAN is down; run realarm's start_arx_dual_can.sh (slcand on /dev/arxcan*) or set CAN_SCRIPT" >&2; exit 1; }
       bash "$CAN_SCRIPT"
+      can_up || { echo "$CAN still down after CAN_SCRIPT (checked $CAN, the yaml's can_port)" >&2; exit 1; }
     fi
     echo "ok   $CAN up"
     ;;

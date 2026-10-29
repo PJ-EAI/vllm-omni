@@ -15,6 +15,9 @@ driver:
   modes: [joint_pos]              # add eef_pose to use the X5's onboard solver
   home_joints: [0.0, 0.17, 0.23, -0.06, 0.0, 0.0]   # commanded and waited for by robotctl home
   # joint_limits: [[-2.9, 2.9], ...]  # TODO confirm from the X5 manual before live motion
+  # TODO no speed knob: the vendor API has no speed argument (arx_x(500,2000,10)
+  # is an undocumented gain triple), so joints move at the vendor default speed
+  # and home() bypasses the safety step limit -- first live run must be --mode slow.
 cameras:
   front: {kind: realsense, width: 640, height: 480, fps: 30}
   wrist: {kind: uvc, device: 0, width: 640, height: 480, fps: 30}
