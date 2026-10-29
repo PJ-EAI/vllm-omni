@@ -15,9 +15,10 @@ the studio without hardware, then run it for real. Code:
 | CLI | `robotctl check | run | home --robot <yaml>` | `check` never moves; `run` defaults to the file's `start_mode` |
 | Studio robot mode | `apps/vla-maas-studio/{robot_run,piper_sim}.py` | same adapter / safety / loop as `robotctl run`, plus camera frames and telemetry in a browser |
 
-Drivers today: `mock` (CPU) and `piper` (AgileX Piper over CAN, `piper_sdk>=0.6`,
-extra `piper`). ARX and Franka are next; each is one driver file, one yaml and
-one extra.
+Drivers today: `mock` (CPU), `piper` (AgileX Piper over CAN, `piper_sdk>=0.6`,
+extra `piper`) and `arx` (ARX X5 over slcan, reuses the arm PC's realarm
+`bimanual` package via `bimanual_path`; venv must be Python 3.11). Franka is
+next; each is one driver file and one yaml.
 
 ## AgileX Piper specifics (`drivers/piper.py`)
 

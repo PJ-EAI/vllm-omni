@@ -89,6 +89,7 @@ class RobotDriver:
 DRIVERS: dict[str, str] = {
     "mock": "vla_maas_robot.drivers.mock:MockDriver",
     "piper": "vla_maas_robot.drivers.piper:PiperDriver",
+    "arx": "vla_maas_robot.drivers.arx:ArxDriver",
 }
 
 
