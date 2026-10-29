@@ -6,104 +6,421 @@
 <title>VLA MaaS Dashboard</title>
 <style>
   :root {
-    --bg: #f7f7f5; --card: #ffffff; --ink: #1d1d1b; --quiet: #6b6b66; --rule: #e4e4df;
-    --accent: #2f6fdb; --good: #2e8b57; --bad: #c0392b;
+    --bg: #f7f7f5; --card: #ffffff; --ink: #1d1d1b; --quiet: #6b6b66; --rule: #e4e4df; --hover: #f0f0ec;
+    --accent: #2f6fdb; --accent2: #d9822b; --good: #2e8b57; --bad: #c0392b; --idle: #8a8a84;
+    --s1: #2f6fdb; --s2: #d9822b; --s3: #2e8b57; --s4: #8e44ad; --s5: #16a2b8; --s6: #c0392b; --s7: #6b6b66;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #161615; --card: #20201e; --ink: #ecece8; --quiet: #a3a39c; --rule: #33332f;
-            --accent: #6b9cf0; --good: #5cc28a; --bad: #e57368; }
+    :root { --bg: #161615; --card: #20201e; --ink: #ecece8; --quiet: #a3a39c; --rule: #33332f; --hover: #2a2a27;
+            --accent: #6b9cf0; --accent2: #f0a35e; --good: #5cc28a; --bad: #e57368; --idle: #8f8f88;
+            --s1: #6b9cf0; --s2: #f0a35e; --s3: #5cc28a; --s4: #b98ad6; --s5: #4fc3d6; --s6: #e57368; --s7: #a3a39c; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
          font: 14px/1.5 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
-  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px; }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 48px; }
   header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
   h1 { font-size: 20px; margin: 0; }
-  .key { display: flex; gap: 8px; }
-  input { font: inherit; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 6px;
-          background: var(--card); color: var(--ink); width: 220px; }
+  h2 { font-size: 15px; margin: 28px 0 10px; }
+  input, select, button { font: inherit; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 6px;
+          background: var(--card); color: var(--ink); }
+  #key { width: 220px; }
+  button { cursor: pointer; }
+  button.danger { border-color: var(--bad); color: var(--bad); }
+  button.danger:hover { background: var(--bad); color: #fff; }
   #status { color: var(--quiet); font-size: 12px; margin-top: 4px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-top: 20px; }
-  .card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; }
-  .card h2 { font-size: 16px; margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; min-width: 0; }
+  .card h3 { font-size: 15px; margin: 0 0 12px; }
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-  .stat .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .stat .l { color: var(--quiet); font-size: 12px; }
   .ok { color: var(--good); } .warn { color: var(--bad); }
-  svg { width: 100%; height: 72px; margin-top: 12px; display: block; }
-  .legend { color: var(--quiet); font-size: 12px; }
+  svg.chart { width: 100%; height: 80px; margin-top: 12px; display: block; }
+  .legend { color: var(--quiet); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .legend i { display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 4px; }
+  .backends { margin-top: 12px; border-top: 1px solid var(--rule); padding-top: 8px; }
+  .backend { display: grid; grid-template-columns: minmax(0, 1fr) 90px auto; gap: 8px; align-items: center;
+             font-size: 12px; padding: 3px 0; }
+  .backend .url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--quiet); }
+  .bar { height: 6px; border-radius: 3px; background: var(--rule); overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 10px; }
+  .toolbar label { color: var(--quiet); font-size: 13px; }
+  .table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--rule); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  th { color: var(--quiet); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; }
+  td.instr { max-width: 260px; overflow: hidden; text-overflow: ellipsis; color: var(--quiet); }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover, tbody tr.sel { background: var(--hover); }
+  tbody tr:last-child td { border-bottom: 0; }
+  tr.closed td { color: var(--quiet); }
+  .empty { padding: 24px; text-align: center; color: var(--quiet); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid currentColor; }
+  .pill.running { color: var(--good); } .pill.idle, .pill.closed { color: var(--idle); }
+  .pill.connecting { color: var(--accent); } .pill.stopping { color: var(--bad); }
+  .kind { color: var(--quiet); font-size: 11px; margin-left: 6px; }
+  /* Session drawer */
+  #drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(600px, 100vw); background: var(--bg);
+            border-left: 1px solid var(--rule); box-shadow: -8px 0 24px rgba(0,0,0,.12); overflow-y: auto;
+            transform: translateX(100%); transition: transform .2s ease; z-index: 10; }
+  #drawer.open { transform: none; }
+  .drawer-head { position: sticky; top: 0; background: var(--bg); padding: 16px; border-bottom: 1px solid var(--rule);
+                 display: flex; gap: 10px; align-items: center; justify-content: space-between; z-index: 1; }
+  .drawer-head h3 { margin: 0; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .drawer-body { padding: 16px; display: grid; gap: 16px; }
+  .meta { color: var(--quiet); font-size: 12px; word-break: break-all; }
+  .cams { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .cam { background: #000; border-radius: 8px; overflow: hidden; position: relative; aspect-ratio: 1 / 1; }
+  .cam img { width: 100%; height: 100%; object-fit: contain; display: block; image-rendering: auto; }
+  .cam .role { position: absolute; left: 8px; top: 6px; color: #fff; font-size: 12px; text-shadow: 0 1px 2px #000; }
+  .cam.none { display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 12px; }
+  dl.kv { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 6px 12px; margin: 0; }
+  dl.kv dt { color: var(--quiet); font-size: 13px; }
+  dl.kv dd { margin: 0; word-break: break-word; font-variant-numeric: tabular-nums; }
+  .vec { display: flex; flex-wrap: wrap; gap: 4px; }
+  .vec span { font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--hover); font-variant-numeric: tabular-nums; }
+  .events { list-style: none; margin: 0; padding: 0; font-size: 12px; max-height: 220px; overflow-y: auto; }
+  .events li { padding: 4px 0; border-bottom: 1px solid var(--rule); display: grid; grid-template-columns: 70px 110px minmax(0, 1fr); gap: 8px; }
+  .events .t { color: var(--quiet); } .events .error { color: var(--bad); }
+  .events .d { word-break: break-word; }
+  .section-title { font-size: 13px; color: var(--quiet); margin: 0 0 8px; }
+  @media (max-width: 560px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    #key { width: 160px; }
+    dl.kv { grid-template-columns: 90px minmax(0, 1fr); }
+  }
 </style>
 </head>
 <body>
 <main>
   <header>
     <div>
-      <h1>VLA MaaS 实时面板</h1>
-      <div id="status">输入 API Key 后开始刷新</div>
+      <h1>VLA MaaS 调度与真机监控</h1>
+      <div id="status">输入运维 API Key 后开始连接</div>
     </div>
-    <div class="key">
-      <input id="key" type="password" placeholder="API Key" autocomplete="off">
+    <div>
+      <input id="key" type="password" placeholder="运维 API Key" autocomplete="off">
     </div>
   </header>
-  <div class="grid" id="grid"></div>
+
+  <h2>模型与后端</h2>
+  <div class="grid" id="models"></div>
+
+  <h2>连接</h2>
+  <div class="toolbar">
+    <input id="filter" placeholder="按机器人、模型、后端或客户端筛选">
+    <label><input type="checkbox" id="showClosed"> 显示最近断开的连接</label>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>机器人 / 会话</th><th>模型</th><th>本体</th><th>后端</th><th>状态</th>
+        <th class="num">在线</th><th class="num">请求</th><th class="num">p50 ms</th><th class="num">p99 ms</th>
+        <th class="num">错误</th><th class="num">成功率</th><th>当前指令</th>
+      </tr></thead>
+      <tbody id="sessions"></tbody>
+    </table>
+  </div>
 </main>
+
+<aside id="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <h3 id="d-title">–</h3>
+    <div style="display:flex; gap:8px; align-items:center">
+      <select id="d-fps" title="画面刷新率">
+        <option value="2">2 fps</option><option value="5" selected>5 fps</option><option value="10">10 fps</option>
+      </select>
+      <button id="d-stop" class="danger" hidden>停止</button>
+      <button id="d-close" aria-label="关闭">✕</button>
+    </div>
+  </div>
+  <div class="drawer-body">
+    <div class="meta" id="d-meta"></div>
+    <div>
+      <p class="section-title">相机画面（模型收到的输入帧）</p>
+      <div class="cams" id="d-cams"></div>
+    </div>
+    <div class="card">
+      <p class="section-title">工作状态</p>
+      <dl class="kv" id="d-kv"></dl>
+    </div>
+    <div class="card">
+      <p class="section-title">本体状态</p>
+      <dl class="kv" id="d-state"></dl>
+    </div>
+    <div class="card">
+      <p class="section-title" id="d-actions-title">最新动作块</p>
+      <div id="d-actions"></div>
+    </div>
+    <div class="card">
+      <p class="section-title">推理延迟（最近 120 次，ms）</p>
+      <div id="d-latency"></div>
+    </div>
+    <div class="card">
+      <p class="section-title">事件</p>
+      <ul class="events" id="d-events"></ul>
+    </div>
+  </div>
+</aside>
+
 <script>
-const BUDGET_MS = 100, HISTORY = 120;
-const keyInput = document.getElementById('key');
-const grid = document.getElementById('grid');
-const statusEl = document.getElementById('status');
-const history = {};
-const lastSeen = {};  // model -> {requests, t} for the throughput delta
-try { keyInput.value = localStorage.getItem('vla-maas-key') || ''; } catch (e) {}
-keyInput.addEventListener('change', () => { try { localStorage.setItem('vla-maas-key', keyInput.value); } catch (e) {} });
+const BUDGET_MS = 100, WINDOW_S = 300;
+const STATUS = { running: '运行中', idle: '空闲', connecting: '连接中', stopping: '停止中', closed: '已断开' };
+const SERIES_COLORS = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7'];
+const $ = id => document.getElementById(id);
+const keyInput = $('key'), statusEl = $('status');
+const state = { ws: null, series: {}, snapshot: null, selected: null, retry: 0, detail: null };
 
-const fmt = (v, digits = 0) => v == null ? '–' : v.toFixed(digits);
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+};
+keyInput.value = store.get('vla-maas-key', '');
+$('showClosed').checked = store.get('vla-maas-show-closed', '0') === '1';
 
-function sparkline(points) {
-  if (points.length < 2) return '<svg viewBox="0 0 300 72"></svg>';
-  const max = Math.max(BUDGET_MS * 1.5, ...points);
-  const x = i => (i / (HISTORY - 1)) * 300, y = v => 68 - (v / max) * 64;
-  const offset = HISTORY - points.length;
-  const d = points.map((v, i) => `${i ? 'L' : 'M'}${x(i + offset).toFixed(1)} ${y(v).toFixed(1)}`).join('');
-  return `<svg viewBox="0 0 300 72" preserveAspectRatio="none" role="img" aria-label="relay p50 history">
-    <line x1="0" x2="300" y1="${y(BUDGET_MS)}" y2="${y(BUDGET_MS)}" stroke="var(--bad)" stroke-dasharray="4 4" stroke-width="1" vector-effect="non-scaling-stroke"/>
-    <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const fmt = (v, d = 0) => v == null ? '–' : Number(v).toFixed(d);
+const pct = v => v == null ? '–' : `${(v * 100).toFixed(0)}%`;
+const dur = s => s == null ? '–' : s < 60 ? `${s.toFixed(0)}s` : s < 3600 ? `${Math.floor(s / 60)}m${String(Math.floor(s % 60)).padStart(2, '0')}s` : `${(s / 3600).toFixed(1)}h`;
+const shortUrl = u => { try { const x = new URL(u); return x.host + (x.pathname.length > 1 ? '…' : ''); } catch (e) { return u; } };
+const clock = t => new Date(t * 1000).toLocaleTimeString();
+
+// -- Connection ---------------------------------------------------------------
+
+function connect() {
+  if (state.ws) { state.ws.onclose = null; state.ws.close(); state.ws = null; }
+  if (!keyInput.value) { statusEl.textContent = '输入运维 API Key 后开始连接'; return; }
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/v1/monitor`);
+  state.ws = ws;
+  statusEl.textContent = '连接中…';
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', key: keyInput.value }));
+  ws.onmessage = ev => onMessage(JSON.parse(ev.data));
+  ws.onclose = ev => {
+    state.ws = null;
+    if (ev.code === 4401) { statusEl.textContent = 'API Key 无效（需要运维 Key）'; return; }
+    state.retry = Math.min(state.retry + 1, 5);
+    statusEl.textContent = `网关连接断开，${state.retry * 2} 秒后重连`;
+    setTimeout(connect, state.retry * 2000);
+  };
 }
 
-function render(metrics) {
-  grid.innerHTML = Object.entries(metrics).map(([model, m]) => {
-    (history[model] ||= []).push(m.relay_p50_ms ?? 0);
-    if (history[model].length > HISTORY) history[model].shift();
-    const now = performance.now(), prev = lastSeen[model];
-    const rps = prev && now > prev.t ? (m.requests - prev.requests) / ((now - prev.t) / 1000) : null;
-    lastSeen[model] = { requests: m.requests, t: now };
+function send(msg) { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify(msg)); }
+
+function onMessage(msg) {
+  if (msg.type === 'hello') {
+    state.retry = 0;
+    state.series = msg.models;
+    if (state.selected) watch(state.selected);
+  } else if (msg.type === 'snapshot') {
+    for (const [m, info] of Object.entries(msg.models)) {
+      const s = (state.series[m] ||= []);
+      for (const p of info.series) if (!s.length || p.t > s[s.length - 1].t) s.push(p);
+      if (s.length > 600) s.splice(0, s.length - 600);
+    }
+    state.snapshot = msg;
+    renderModels(); renderSessions();
+    statusEl.textContent = `实时 · 更新于 ${new Date(msg.t * 1000).toLocaleTimeString()}`;
+  } else if (msg.type === 'detail' && msg.session_id === state.selected) {
+    renderDetail(msg);
+  } else if (msg.type === 'gone' && msg.session_id === state.selected) {
+    $('d-meta').textContent = '该会话已不在网关的记录里。';
+  } else if (msg.type === 'stop_ack') {
+    if (!msg.ok) alert(`停止失败：${msg.message}`);
+  }
+}
+
+keyInput.addEventListener('change', () => { store.set('vla-maas-key', keyInput.value); state.retry = 0; connect(); });
+$('filter').addEventListener('input', renderSessions);
+$('showClosed').addEventListener('change', e => { store.set('vla-maas-show-closed', e.target.checked ? '1' : '0'); renderSessions(); });
+
+// -- Charts -------------------------------------------------------------------
+
+function lineChart(lines, { height = 80, budget = null, n = null, min = null } = {}) {
+  const W = 300, H = height, pad = 4;
+  const all = lines.flatMap(l => l.values.filter(v => v != null));
+  if (!all.length) return `<svg class="chart" viewBox="0 0 ${W} ${H}" style="height:${H}px"></svg>`;
+  let lo = min ?? Math.min(...all), hi = Math.max(...all, budget != null ? budget * 1.2 : -Infinity);
+  if (hi - lo < 1e-6) { hi += 1; lo -= min == null ? 1 : 0; }
+  const len = n ?? Math.max(...lines.map(l => l.values.length));
+  const x = i => (len <= 1 ? 0 : (i / (len - 1)) * W);
+  const y = v => H - pad - ((v - lo) / (hi - lo)) * (H - 2 * pad);
+  const paths = lines.map(l => {
+    const off = len - l.values.length;
+    let d = '', pen = false;
+    l.values.forEach((v, i) => {
+      if (v == null) { pen = false; return; }
+      d += `${pen ? 'L' : 'M'}${x(i + off).toFixed(1)} ${y(v).toFixed(1)}`; pen = true;
+    });
+    return `<path d="${d}" fill="none" stroke="var(${l.color})" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+  }).join('');
+  const rule = budget != null && budget <= hi
+    ? `<line x1="0" x2="${W}" y1="${y(budget)}" y2="${y(budget)}" stroke="var(--bad)" stroke-dasharray="4 4" stroke-width="1" vector-effect="non-scaling-stroke"/>` : '';
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px" role="img">${rule}${paths}</svg>`;
+}
+
+// -- Models and backends ------------------------------------------------------
+
+function renderModels() {
+  const models = state.snapshot.models;
+  $('models').innerHTML = Object.entries(models).map(([model, m]) => {
+    const series = (state.series[model] || []).slice(-WINDOW_S);
+    const last = series.slice(-5);
+    const rps = last.length ? last.reduce((a, p) => a + p.requests, 0) / last.length : null;
     const p99Class = m.relay_p99_ms == null ? '' : (m.relay_p99_ms <= BUDGET_MS ? 'ok' : 'warn');
-    const sr = m.success_rate == null ? '–' : `${(m.success_rate * 100).toFixed(0)}%`;
-    return `<section class="card"><h2>${model}</h2><div class="stats">
-      <div class="stat"><div class="v">${sr}</div><div class="l">成功率（${m.episodes} 回合）</div></div>
+    const maxActive = Math.max(1, ...m.backends.map(b => b.active));
+    const backends = m.backends.map(b => `<div class="backend">
+        <span class="url" title="${esc(b.url)}">${esc(shortUrl(b.url))}</span>
+        <span class="bar" title="${b.active} 个会话"><span style="width:${(b.active / maxActive) * 100}%"></span></span>
+        <span>${b.active} 会话 · ${b.requests} 请求${b.errors ? ` · <span class="warn">${b.errors} 错误</span>` : ''}</span>
+      </div>`).join('');
+    return `<section class="card"><h3>${esc(model)}</h3><div class="stats">
+      <div class="stat"><div class="v">${pct(m.success_rate)}</div><div class="l">成功率（${m.episodes} 回合）</div></div>
       <div class="stat"><div class="v">${fmt(m.relay_p50_ms)}</div><div class="l">p50 延迟 ms</div></div>
       <div class="stat"><div class="v ${p99Class}">${fmt(m.relay_p99_ms)}</div><div class="l">p99 延迟 ms</div></div>
       <div class="stat"><div class="v">${fmt(rps, 1)}</div><div class="l">吞吐 请求/秒（累计 ${m.requests}）</div></div>
-      <div class="stat"><div class="v">${m.active_sessions}</div><div class="l">在线机器人</div></div>
+      <div class="stat"><div class="v">${m.active_sessions}</div><div class="l">在线会话</div></div>
       <div class="stat"><div class="v ${m.errors ? 'warn' : ''}">${m.errors}</div><div class="l">错误</div></div>
-    </div>${sparkline(history[model])}
-    <div class="legend">蓝线：p50 延迟走势 · 红虚线：${BUDGET_MS}ms 预算</div></section>`;
+    </div>
+    ${lineChart([{ values: series.map(p => p.p50_ms), color: '--s1' }, { values: series.map(p => p.p99_ms), color: '--s2' }], { budget: BUDGET_MS, n: WINDOW_S, min: 0 })}
+    <div class="legend"><span><i style="background:var(--s1)"></i>p50</span><span><i style="background:var(--s2)"></i>p99</span>
+      <span><i style="background:var(--bad)"></i>${BUDGET_MS}ms 预算</span><span>最近 ${WINDOW_S / 60} 分钟，每秒一点</span></div>
+    ${lineChart([{ values: series.map(p => p.requests), color: '--s3' }], { height: 48, n: WINDOW_S, min: 0 })}
+    <div class="legend"><span><i style="background:var(--s3)"></i>每秒完成请求数</span></div>
+    <div class="backends">${backends}</div></section>`;
   }).join('');
 }
 
-async function tick() {
-  if (!keyInput.value) return;
-  try {
-    const res = await fetch('/metrics', { headers: { Authorization: `Api-Key ${keyInput.value}` } });
-    if (!res.ok) { statusEl.textContent = res.status === 401 ? 'API Key 无效' : `错误 ${res.status}`; return; }
-    render(await res.json());
-    statusEl.textContent = `更新于 ${new Date().toLocaleTimeString()}`;
-  } catch (e) {
-    statusEl.textContent = '网关无法连接';
-  }
+// -- Sessions table -----------------------------------------------------------
+
+function visibleSessions() {
+  const snap = state.snapshot;
+  if (!snap) return [];
+  const rows = $('showClosed').checked ? [...snap.sessions, ...snap.closed] : snap.sessions;
+  const q = $('filter').value.trim().toLowerCase();
+  return q ? rows.filter(s => [s.label, s.model, s.embodiment, s.backend, s.peer, s.instruction].some(v => String(v ?? '').toLowerCase().includes(q))) : rows;
 }
-setInterval(tick, 1000);
-tick();
+
+function renderSessions() {
+  const rows = visibleSessions();
+  if (!rows.length) {
+    $('sessions').innerHTML = `<tr><td colspan="12" class="empty">${state.snapshot ? '暂无连接' : '尚未连接网关'}</td></tr>`;
+    return;
+  }
+  $('sessions').innerHTML = rows.map(s => `<tr data-id="${esc(s.session_id)}" class="${s.status === 'closed' ? 'closed' : ''} ${s.session_id === state.selected ? 'sel' : ''}">
+      <td><strong>${esc(s.label)}</strong><span class="kind">${s.kind === 'act' ? '标准协议' : 'OpenPI'}</span></td>
+      <td>${esc(s.model)}</td><td>${esc(s.embodiment ?? '–')}</td>
+      <td title="${esc(s.backend)}">${esc(shortUrl(s.backend))}</td>
+      <td><span class="pill ${s.status}">${STATUS[s.status] ?? s.status}</span></td>
+      <td class="num">${dur(s.connected_s)}</td><td class="num">${s.requests}</td>
+      <td class="num">${fmt(s.p50_ms)}</td><td class="num ${s.p99_ms > BUDGET_MS ? 'warn' : ''}">${fmt(s.p99_ms)}</td>
+      <td class="num ${s.errors ? 'warn' : ''}">${s.errors}</td><td class="num">${pct(s.success_rate)}</td>
+      <td class="instr" title="${esc(s.instruction ?? '')}">${esc(s.instruction ?? (s.close_reason ? `断开：${s.close_reason}` : '–'))}</td>
+    </tr>`).join('');
+}
+
+$('sessions').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-id]');
+  if (tr) openDrawer(tr.dataset.id);
+});
+
+// -- Session drawer -----------------------------------------------------------
+
+function watch(id) { send({ type: 'watch', session_id: id, fps: Number($('d-fps').value) }); }
+
+function openDrawer(id) {
+  state.selected = id; state.detail = null;
+  const row = [...(state.snapshot?.sessions || []), ...(state.snapshot?.closed || [])].find(s => s.session_id === id);
+  $('d-title').textContent = row ? row.label : id;
+  $('d-meta').textContent = '加载中…';
+  $('d-cams').innerHTML = ''; $('d-kv').innerHTML = ''; $('d-state').innerHTML = '';
+  $('d-actions').innerHTML = ''; $('d-latency').innerHTML = ''; $('d-events').innerHTML = '';
+  $('d-stop').hidden = true;
+  $('drawer').classList.add('open'); $('drawer').setAttribute('aria-hidden', 'false');
+  watch(id); renderSessions();
+}
+
+function closeDrawer() {
+  state.selected = null;
+  send({ type: 'unwatch' });
+  $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden', 'true');
+  renderSessions();
+}
+
+$('d-close').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.selected) closeDrawer(); });
+$('d-fps').addEventListener('change', () => state.selected && watch(state.selected));
+$('d-stop').addEventListener('click', () => {
+  const s = state.detail?.summary;
+  if (!s || !confirm(`停止 ${s.label}？网关会让机器人在下一帧观测时保持位姿并结束本回合。这不是急停，现场仍需硬件急停。`)) return;
+  send({ type: 'stop', session_id: s.session_id, reason: 'operator stop (dashboard)' });
+});
+
+function renderDetail(d) {
+  state.detail = d;
+  const s = d.summary;
+  $('d-title').innerHTML = `${esc(s.label)} <span class="pill ${s.status}">${STATUS[s.status] ?? s.status}</span>`;
+  $('d-meta').textContent = [s.kind === 'act' ? '标准协议 /act' : 'OpenPI 直连', s.model, s.embodiment, `后端 ${s.backend}`, `客户端 ${s.peer}`, `会话 ${s.session_id}`].filter(Boolean).join(' · ');
+  $('d-stop').hidden = !s.can_stop;
+
+  if (d.frames) {
+    const cams = $('d-cams');
+    const roles = Object.keys(d.frames);
+    if (!roles.length && !cams.children.length) cams.innerHTML = '<div class="cam none">这个会话的观测里没有图像</div>';
+    for (const role of roles) {
+      let img = cams.querySelector(`img[data-role="${CSS.escape(role)}"]`);
+      if (!img) {
+        cams.querySelector('.none')?.remove();
+        const box = document.createElement('div');
+        box.className = 'cam';
+        box.innerHTML = `<img data-role="${esc(role)}" alt="${esc(role)}"><span class="role">${esc(role)}</span>`;
+        cams.appendChild(box);
+        img = box.querySelector('img');
+      }
+      img.src = `data:image/jpeg;base64,${d.frames[role]}`;
+    }
+  } else if (!$('d-cams').children.length) {
+    $('d-cams').innerHTML = `<div class="cam none">${s.status === 'closed' ? '会话已断开' : '等待第一帧观测'}</div>`;
+  }
+
+  const err = d.last_error;
+  $('d-kv').innerHTML = [
+    ['状态', `<span class="pill ${s.status}">${STATUS[s.status] ?? s.status}</span>${s.close_reason ? `　${esc(s.close_reason)}` : ''}`],
+    ['当前指令', esc(s.instruction ?? '–')],
+    ['回合', esc(d.episode_id ?? '–') + `　（已完成 ${s.episodes}，成功率 ${pct(s.success_rate)}）`],
+    ['最近观测', s.obs_age_s == null ? '–' : `${s.obs_age_s.toFixed(1)} 秒前`],
+    ['在线时长', dur(s.connected_s)],
+    ['请求 / 错误', `${s.requests} / <span class="${s.errors ? 'warn' : ''}">${s.errors}</span>`],
+    ['延迟', `最近 ${fmt(s.last_server_ms, 1)} ms · p50 ${fmt(s.p50_ms, 1)} · p99 ${fmt(s.p99_ms, 1)}`],
+    ['最近错误', err ? `<span class="warn">${esc(err.code)}</span>：${esc(err.message)}（${clock(err.t)}）` : '无'],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+
+  const st = Object.entries(d.state);
+  $('d-state').innerHTML = st.length
+    ? st.map(([k, vals]) => `<dt>${esc(k)}</dt><dd><div class="vec">${vals.map(v => `<span>${v.toFixed(3)}</span>`).join('')}</div></dd>`).join('')
+    : '<dt>–</dt><dd>暂无</dd>';
+
+  const acts = Object.entries(d.actions);
+  $('d-actions').innerHTML = acts.length ? acts.map(([k, rows]) => {
+    const dims = rows[0]?.length ?? 0;
+    const lines = Array.from({ length: Math.min(dims, SERIES_COLORS.length) }, (_, j) => ({ values: rows.map(r => r[j]), color: SERIES_COLORS[j] }));
+    return `<div class="legend"><strong style="color:var(--ink)">${esc(k)}</strong><span>${rows.length} 步 × ${dims} 维</span>
+      ${lines.map((l, j) => `<span><i style="background:var(${l.color})"></i>${j}</span>`).join('')}${dims > lines.length ? `<span>（只画前 ${lines.length} 维）</span>` : ''}</div>
+      ${lineChart(lines, { height: 90 })}`;
+  }).join('') : '<div class="legend">暂无</div>';
+
+  $('d-latency').innerHTML = d.latencies_ms.length
+    ? lineChart([{ values: d.latencies_ms, color: '--s1' }], { budget: BUDGET_MS, min: 0, height: 64 })
+    : '<div class="legend">暂无</div>';
+
+  $('d-events').innerHTML = d.events.slice().reverse().map(e =>
+    `<li><span class="t">${clock(e.t)}</span><span class="${e.kind === 'error' ? 'error' : ''}">${esc(e.kind)}</span><span class="d">${esc(e.detail)}</span></li>`).join('');
+}
+
+connect();
 </script>
 </body>
 </html>

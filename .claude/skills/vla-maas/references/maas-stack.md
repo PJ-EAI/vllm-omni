@@ -18,7 +18,8 @@ models:
 | Endpoint | Auth | Returns |
 | --- | --- | --- |
 | `GET /healthz` | no | `{"status": "ok"}` |
-| `GET /dashboard` | no (page asks for key) | HTML, polls `/metrics` |
+| `GET /dashboard` | no (page asks for key) | HTML fleet view over `/v1/monitor` |
+| `WS /v1/monitor` | operator key in the first message | per-second `snapshot` (models, backends, history, sessions); `detail` with camera JPEGs, state and actions for a watched session; `stop` for `/act` sessions |
 | `GET /v1/models` | yes | `{"models": [{"id", "backends"}]}` |
 | `GET /metrics` | yes | per model: `requests, errors, active_sessions, episodes, success_rate, relay_p50_ms, relay_p99_ms` |
 | `WS /v1/robot/<model>/openpi` | yes | OpenPI relay; handshake metadata gains `model`, `backend` |

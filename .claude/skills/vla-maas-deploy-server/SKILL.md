@@ -48,6 +48,11 @@ started and where its logs are.
    - The script passes `--robot-openpi-idle-timeout 0`. The default 30 s
      closes a robot's session between episodes.
    - Several nodes: run the script on each, then join the `BACKENDS` lines.
+   - One node with several GPUs and the gateway on the same node: see
+     [One node, several GPUs](#one-node-several-gpus-eg-8-rtx-4090).
+   - The script downloads the checkpoint and the gated tokenizer once before
+     starting (`PREFETCH=0` skips it) and waits `STAGGER_S` (default 10 s)
+     between launches.
    - CPU rehearsal: `MOCK=1` starts mock backends on the same ports.
 
 2. **Gateway config and keys**:
@@ -93,9 +98,44 @@ started and where its logs are.
 6. Hand each robot operator: the URL, the model name (`pi05_piper`), its
    `robot_id` and its key file. Then follow `vla-maas-deploy-robot`.
 
+## One node, several GPUs (e.g. 8× RTX 4090)
+
+Backends and gateway on one machine; only the TLS proxy is public.
+
+```bash
+ONLY=pi05 bash .claude/skills/vla-maas-local-pi05/scripts/setup_envs.sh   # uv env .venv-pi05: vLLM + vllm-omni
+ONLY=maas bash .claude/skills/vla-maas-local-pi05/scripts/setup_envs.sh   # uv env .venv-maas: gateway
+export HF_HOME=/data/hf_cache                                              # local disk with ~20 GB free
+.venv-pi05/bin/hf auth login
+cp vllm_omni/deploy/pi05.yaml deploy-pi05.yaml && sed -i 's/^dtype: .*/dtype: bfloat16/' deploy-pi05.yaml
+CKPT=<ckpt> DEPLOY=$PWD/deploy-pi05.yaml GPUS="0 1 2 3 4 5 6 7" HOST=127.0.0.1 ADVERTISE=127.0.0.1 \
+  VLLM=$PWD/.venv-pi05/bin/vllm bash .claude/skills/vla-maas-deploy-server/scripts/serve_pi05.sh
+# then step 2 with that BACKENDS line, and step 3 with PYTHON=$PWD/.venv-maas/bin/python
+```
+
+- `HOST=127.0.0.1` keeps ports 8001–8008 off the network; only the gateway on
+  the same node reaches them.
+- Driver: the default vLLM wheel in `setup_envs.sh` is the CUDA 13 build, so
+  `nvidia-smi` must show CUDA 13.0 or newer. With an older driver, install vLLM
+  per `docs/getting_started/installation/gpu.md` (`VLLM_WHEEL=`, `TORCH_BACKEND=`).
+  The RTX 4090 is sm_89; the π0.5 recipe lists serving as verified on it.
+- Memory: π0.5 in bfloat16 peaks near 9 GiB at batch 1, well inside 24 GB. Keep
+  `max_num_seqs: 1` until a concurrency sweep on this node
+  (`.claude/skills/vla-maas/scripts/serve_and_sweep.sh`) shows that batching
+  helps; that is unmeasured on the 4090.
+- Host: eight processes load the same checkpoint. The prefetch and the stagger
+  spread the disk and RAM peak; watch `free -g` while they start, and raise
+  `STAGGER_S` if the host swaps.
+- Capacity: by the estimate below, eight backends serve roughly 24 Piper arms
+  at 30 Hz with 50-step chunks. Confirm with the robots' `rtt_p50` and
+  `underruns` and with the dashboard's per-backend load.
+- `nvidia-smi` should show one vLLM process per GPU; the dashboard lists the
+  eight backends with their session counts.
+
 ## Operating
 
-- **Live view:** `https://<domain>/dashboard` (operator key), `GET /metrics`
+- **Live view:** `https://<domain>/dashboard` (operator key; per-arm camera
+  frames and state through `WS /v1/monitor`), `GET /metrics`
   (`relay_p99_ms`, active sessions per model) and `GET /v1/robots`.
 - **Stop one robot:** `curl -H "Authorization: Api-Key $VLA_MAAS_OPERATOR_KEY" https://<domain>/v1/robots/<id>/stop`.
   This is a software stop; every arm still needs its hardware e-stop.

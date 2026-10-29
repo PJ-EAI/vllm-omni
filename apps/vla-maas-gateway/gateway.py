@@ -32,6 +32,8 @@ HTTP endpoints on the same port:
     GET /v1/robots/<id>/stop       answer that robot's next observation with ``stop`` (operator key).
                                    GET because the websockets HTTP server accepts no other method.
     GET /metrics                   per-model request counts, errors and relay latency (operator key)
+    WS  /v1/monitor                live scheduling, performance and per-session camera frames and state
+                                   for the dashboard (operator key in the first message; see monitor.py)
 
 Usage:
     python gateway.py --config gateway.example.yaml
@@ -47,17 +49,15 @@ import logging
 import os
 import re
 import time
-import uuid
-from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-import numpy as np
 import vla_maas_protocol as proto
 import yaml
 from model_adapters import ModelAdapter, make_adapter
+from monitor import Backend, ModelStats, Monitor, SessionView
 from openpi_client import msgpack_numpy
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import ServerConnection, serve
@@ -71,8 +71,8 @@ ROBOT_PATH = re.compile(r"^/v1/robot/(?P<model>[A-Za-z0-9._-]+)/openpi$")
 ACT_PATH = re.compile(r"^/v1/robot/(?P<model>[A-Za-z0-9._-]+)/act$")
 MODEL_PATH = re.compile(r"^/v1/models/(?P<model>[A-Za-z0-9._-]+)$")
 STOP_PATH = re.compile(r"^/v1/robots/(?P<robot>[A-Za-z0-9._-]+)/stop$")
+MONITOR_PATH = "/v1/monitor"
 ROBOT_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
-LATENCY_WINDOW = 1000
 HELLO_TIMEOUT_S = 10.0
 # Control frames carry no images; anything larger is an observation, relayed undecoded.
 MAX_CONTROL_FRAME_BYTES = 4096
@@ -80,64 +80,9 @@ DASHBOARD_HTML = Path(__file__).with_name("dashboard.html")
 
 
 @dataclass
-class Backend:
-    url: str
-    active: int = 0
-
-
-@dataclass
-class ModelStats:
-    requests: int = 0
-    errors: int = 0
-    sessions: int = 0
-    episodes: int = 0
-    successes: int = 0
-    latencies_ms: deque[float] = field(default_factory=lambda: deque(maxlen=LATENCY_WINDOW))
-
-    def snapshot(self) -> dict:
-        lat = np.asarray(self.latencies_ms) if self.latencies_ms else None
-        return {
-            "requests": self.requests,
-            "errors": self.errors,
-            "active_sessions": self.sessions,
-            "episodes": self.episodes,
-            "success_rate": self.successes / self.episodes if self.episodes else None,
-            "relay_p50_ms": float(np.percentile(lat, 50)) if lat is not None else None,
-            "relay_p99_ms": float(np.percentile(lat, 99)) if lat is not None else None,
-        }
-
-
-@dataclass
 class RobotAccess:
     api_key: str
     models: list[str] | None = None  # None = every model
-
-
-@dataclass
-class LiveRobot:
-    robot_id: str
-    model: str
-    embodiment: str
-    backend: str
-    session_id: str
-    connected_at: float = field(default_factory=time.time)
-    requests: int = 0
-    latencies_ms: deque[float] = field(default_factory=lambda: deque(maxlen=LATENCY_WINDOW))
-    stop_reason: str | None = None
-
-    def snapshot(self) -> dict:
-        lat = np.asarray(self.latencies_ms) if self.latencies_ms else None
-        return {
-            "robot_id": self.robot_id,
-            "model": self.model,
-            "embodiment": self.embodiment,
-            "backend": self.backend,
-            "session_id": self.session_id,
-            "connected_s": round(time.time() - self.connected_at, 1),
-            "requests": self.requests,
-            "server_p50_ms": float(np.percentile(lat, 50)) if lat is not None else None,
-            "stop_pending": self.stop_reason is not None,
-        }
 
 
 class Gateway:
@@ -159,17 +104,20 @@ class Gateway:
                 raise ValueError(f"robot {rid!r} lists unknown models {sorted(unknown)}")
         self.stats = {name: ModelStats() for name in self.models}
         self.request_timeout_s = float(config.get("request_timeout_s", 5.0))
-        self.live: dict[str, LiveRobot] = {}
+        self.live: dict[str, SessionView] = {}  # /act sessions by robot_id
+        self.monitor = Monitor(self.models, self.stats, self.operator_key)
 
     @staticmethod
     def _key(headers: Headers) -> str | None:
         scheme, _, key = headers.get("Authorization", "").partition(" ")
         return key if scheme in ("Api-Key", "Bearer") and key else None
 
+    def operator_key(self, key: str | None) -> bool:
+        return bool(key) and any(hmac.compare_digest(key, expected) for expected in self.api_keys)
+
     def authorized(self, headers: Headers) -> bool:
         """Operator key: valid on every route."""
-        key = self._key(headers)
-        return key is not None and any(hmac.compare_digest(key, expected) for expected in self.api_keys)
+        return self.operator_key(self._key(headers))
 
     def robot_authorized(self, headers: Headers, robot_id: str | None, model: str | None) -> bool:
         """Operator key, or this robot's own key on a model it may use."""
@@ -204,6 +152,8 @@ class Gateway:
             body = DASHBOARD_HTML.read_bytes()
             headers = Headers([("Content-Type", "text/html; charset=utf-8"), ("Content-Length", str(len(body)))])
             return Response(HTTPStatus.OK.value, HTTPStatus.OK.phrase, headers, body)
+        if request.path == MONITOR_PATH:
+            return None  # browsers cannot set headers on a websocket; the key is the first message
         if not self.authorized(request.headers):
             return _json_response(HTTPStatus.UNAUTHORIZED, {"error": "invalid or missing API key"})
         if request.path == "/v1/models":
@@ -213,14 +163,13 @@ class Gateway:
         if request.path == "/metrics":
             return _json_response(HTTPStatus.OK, {m: s.snapshot() for m, s in self.stats.items()})
         if url.path == "/v1/robots":
-            return _json_response(HTTPStatus.OK, {"robots": [r.snapshot() for r in self.live.values()]})
+            return _json_response(HTTPStatus.OK, {"robots": [r.robot_snapshot() for r in self.live.values()]})
         stop = STOP_PATH.match(url.path)
         if stop is not None:
             live = self.live.get(stop["robot"])
             if live is None:
                 return _json_response(HTTPStatus.NOT_FOUND, {"error": f"robot {stop['robot']!r} is not connected"})
-            live.stop_reason = parse_qs(url.query).get("reason", ["operator stop"])[0]
-            logger.warning("stop requested for robot %s: %s", live.robot_id, live.stop_reason)
+            self.monitor.request_stop(live, parse_qs(url.query).get("reason", ["operator stop"])[0])
             return _json_response(HTTPStatus.OK, {"status": "stop pending", "robot_id": live.robot_id})
         match = ROBOT_PATH.match(request.path)
         if match is None:
@@ -253,7 +202,10 @@ class Gateway:
         return _json_response(HTTPStatus.OK, info)
 
     async def handle(self, client: ServerConnection) -> None:
-        if ACT_PATH.match(urlsplit(client.request.path).path):
+        path = urlsplit(client.request.path).path
+        if path == MONITOR_PATH:
+            await self.monitor.serve(client)
+        elif ACT_PATH.match(path):
             await self.handle_act(client)
         else:
             await self.handle_openpi(client)
@@ -271,9 +223,12 @@ class Gateway:
             return
         backend = self.pick_backend(model)
         stats = self.stats[model]
+        view = self.monitor.open(
+            SessionView("act", model, stats, backend, _peer(client), robot_id=robot_id, embodiment=embodiment)
+        )
         backend.active += 1
         stats.sessions += 1
-        live: LiveRobot | None = None
+        reason = "robot disconnected"
         try:
             async with connect(backend.url, compression=None, max_size=None) as upstream:
                 metadata = proto.unpackb(await upstream.recv())
@@ -282,30 +237,37 @@ class Gateway:
                 await client.send(proto.packb(server.to_wire()))
                 robot, problems = await self._robot_hello(client, server, adapter, robot_id, embodiment)
                 if robot is None:
+                    reason = "no valid robot_hello"
                     return
                 if problems:
+                    reason = "incompatible: " + "; ".join(problems)
                     await client.send(proto.packb(proto.error("incompatible", "robot cannot run this model", problems)))
                     await client.close(proto.CLOSE_INCOMPATIBLE, "incompatible robot and model")
                     return
                 if robot_id in self.live:  # another session won the race
+                    reason = "robot_id already connected"
                     await client.close(proto.CLOSE_DUPLICATE_ROBOT, "robot_id already connected")
                     return
-                live = LiveRobot(robot_id, model, robot.embodiment, backend.url, uuid.uuid4().hex)
-                self.live[robot_id] = live
+                view.embodiment, view.ready = robot.embodiment, True
+                self.live[robot_id] = view
+                view.event("ready", f"{robot.embodiment} via {backend.url}")
                 logger.info("robot %s (%s) on %s via %s", robot_id, robot.embodiment, model, backend.url)
-                await client.send(proto.packb({"type": "ready", "session_id": live.session_id}))
+                await client.send(proto.packb({"type": "ready", "session_id": view.session_id}))
                 async for frame in client:
-                    reply = await self._act_frame(frame, upstream, adapter, server, robot, live, stats)
+                    reply = await self._act_frame(frame, upstream, adapter, server, robot, view)
                     await client.send(proto.packb(reply))
                     if reply.get("code") == "backend_failed":
+                        reason = "backend failed"
                         return
         except OSError as exc:
-            stats.errors += 1
+            reason = "backend unavailable"
+            view.fail("backend_unavailable", str(exc))
             logger.warning("backend %s unreachable for %s: %s", backend.url, model, exc)
             await client.close(1011, "backend unavailable")
         finally:
-            if live is not None and self.live.get(robot_id) is live:
+            if self.live.get(robot_id) is view:
                 del self.live[robot_id]
+            self.monitor.close(view, reason)
             backend.active -= 1
             stats.sessions -= 1
 
@@ -339,59 +301,58 @@ class Gateway:
         adapter: ModelAdapter,
         server: proto.ServerHello,
         robot: proto.RobotHello,
-        live: LiveRobot,
-        stats: ModelStats,
+        view: SessionView,
     ) -> dict:
+        def failed(code: str, message: str, problems: list[str] | None = None) -> dict:
+            view.fail(code, message)
+            return proto.error(code, message, problems)
+
         try:
             msg = proto.unpackb(frame)
         except Exception as exc:
             return proto.error("bad_frame", f"cannot decode frame: {exc}")
         kind = msg.get("type") if isinstance(msg, dict) else None
         if kind == "episode_result":
-            stats.episodes += 1
-            stats.successes += int(bool(msg.get("success")))
+            view.episode(bool(msg.get("success")))
             return {"type": "ok"}
         if kind == "reset":
+            view.event("reset")
             try:
                 await upstream.send(proto.packb({"endpoint": "reset"}))
                 await asyncio.wait_for(upstream.recv(), self.request_timeout_s)
             except (asyncio.TimeoutError, ConnectionClosed) as exc:
-                stats.errors += 1
-                return proto.error("backend_failed", f"backend failed: {exc!r}")
+                return failed("backend_failed", f"backend failed: {exc!r}")
             return {"type": "ok"}
         if kind != "obs":
             return proto.error("bad_frame", f"unknown message type {kind!r}")
-        if live.stop_reason is not None:
-            reason, live.stop_reason = live.stop_reason, None
+        if view.stop_reason is not None:
+            reason, view.stop_reason = view.stop_reason, None
+            view.event("stopped", reason)
             return {"type": "stop", "reason": reason}
         problems = proto.obs_problems(msg, server.requires, robot.dof)
         if problems:
+            view.event("bad_obs", "; ".join(problems))
             return proto.error("bad_obs", "observation does not match the handshake", problems)
+        view.observe(msg)
         start = time.perf_counter()
-        stats.requests += 1
-        live.requests += 1
+        view.stats.requests += 1
         try:
-            native = adapter.to_native(msg, robot, live.session_id)
+            native = adapter.to_native(msg, robot, view.session_id)
         except Exception as exc:
-            stats.errors += 1
-            return proto.error("bad_obs", f"cannot translate observation: {exc}")
+            return failed("bad_obs", f"cannot translate observation: {exc}")
         try:
             await upstream.send(proto.packb(native))
             reply = proto.unpackb(await asyncio.wait_for(upstream.recv(), self.request_timeout_s))
         except (asyncio.TimeoutError, ConnectionClosed) as exc:
-            stats.errors += 1
-            return proto.error("backend_failed", f"backend failed: {exc!r}")
+            return failed("backend_failed", f"backend failed: {exc!r}")
         if isinstance(reply, dict) and reply.get("type") == "error":
-            stats.errors += 1
-            return proto.error("model_error", str(reply.get("message", reply)))
+            return failed("model_error", str(reply.get("message", reply)))
         try:
             actions = adapter.from_native(reply, msg, robot)
         except Exception as exc:
-            stats.errors += 1
-            return proto.error("model_error", f"cannot translate model output: {exc}")
+            return failed("model_error", f"cannot translate model output: {exc}")
         server_ms = (time.perf_counter() - start) * 1e3
-        stats.latencies_ms.append(server_ms)
-        live.latencies_ms.append(server_ms)
+        view.record(server_ms, actions)
         provides = server.provides
         return {
             "type": "actions",
@@ -410,40 +371,56 @@ class Gateway:
         model = ROBOT_PATH.match(client.request.path)["model"]
         backend = self.pick_backend(model)
         stats = self.stats[model]
+        view = self.monitor.open(SessionView("openpi", model, stats, backend, _peer(client)))
         packer = msgpack_numpy.Packer()
         backend.active += 1
         stats.sessions += 1
+        reason = "client disconnected"
         try:
             async with connect(backend.url, compression=None, max_size=None) as upstream:
                 metadata = msgpack_numpy.unpackb(await upstream.recv())
                 metadata.update(model=model, backend=backend.url)
                 await client.send(packer.pack(metadata))
+                view.ready = True
                 async for frame in client:
                     if isinstance(frame, bytes) and len(frame) <= MAX_CONTROL_FRAME_BYTES:
                         control = msgpack_numpy.unpackb(frame)
                         if isinstance(control, dict) and control.get("endpoint") == "episode_result":
-                            stats.episodes += 1
-                            stats.successes += int(bool(control.get("success")))
+                            view.episode(bool(control.get("success")))
                             await client.send(packer.pack({"status": "ok"}))
                             continue
+                    else:
+                        view.observe(frame)  # kept undecoded; the dashboard decodes it if it watches
                     start = time.perf_counter()
                     stats.requests += 1
                     try:
                         await upstream.send(frame)
                         reply = await asyncio.wait_for(upstream.recv(), self.request_timeout_s)
                     except (asyncio.TimeoutError, ConnectionClosed) as exc:
-                        stats.errors += 1
+                        reason = "backend failed"
+                        view.fail("backend_failed", f"backend failed: {exc!r}")
                         await client.send(packer.pack({"type": "error", "message": f"backend failed: {exc!r}"}))
                         return
-                    stats.latencies_ms.append((time.perf_counter() - start) * 1e3)
+                    view.record((time.perf_counter() - start) * 1e3, reply)
                     await client.send(reply)
         except OSError as exc:
-            stats.errors += 1
+            reason = "backend unavailable"
+            view.fail("backend_unavailable", str(exc))
             logger.warning("backend %s unreachable for %s: %s", backend.url, model, exc)
             await client.close(1011, "backend unavailable")
         finally:
+            self.monitor.close(view, reason)
             backend.active -= 1
             stats.sessions -= 1
+
+
+def _peer(client: ServerConnection) -> str:
+    """The client's address, or the proxy's X-Forwarded-For when behind one."""
+    forwarded = client.request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    address = client.remote_address
+    return f"{address[0]}:{address[1]}" if address else "unknown"
 
 
 def _robot_access(robot_id: str, spec: dict) -> RobotAccess:

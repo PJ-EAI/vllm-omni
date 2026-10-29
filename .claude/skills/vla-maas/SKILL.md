@@ -26,6 +26,7 @@ under `.claude/skills/vla-maas/`.
 | Gateway API, OpenPI wire protocol, observation schema, client tools | [references/maas-stack.md](references/maas-stack.md) |
 | Connect a real arm (robot client, Piper), test it in the studio twin, bring-up order | [references/robots.md](references/robots.md) |
 | Deploy for real arms on another network: cluster + gateway + TLS / each arm PC | [vla-maas-deploy-server](../vla-maas-deploy-server/SKILL.md), [vla-maas-deploy-robot](../vla-maas-deploy-robot/SKILL.md), guide [docs/serving/vla_maas_piper_deployment.md](../../../docs/serving/vla_maas_piper_deployment.md) |
+| Try the whole stack on one GPU workstation: real π0.5, gateway dashboard, Piper twin | [vla-maas-local-pi05](../vla-maas-local-pi05/SKILL.md) |
 | Which VLA models exist, their deploy configs and status | [references/models.md](references/models.md) |
 | Which test or benchmark proves a claim, exact commands | [references/testing.md](references/testing.md) |
 | Running any of this as a batch/cluster job | [references/cluster-jobs.md](references/cluster-jobs.md) |
