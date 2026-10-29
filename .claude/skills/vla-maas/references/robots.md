@@ -15,9 +15,11 @@ the studio without hardware, then run it for real. Code:
 | CLI | `robotctl check | run | home --robot <yaml>` | `check` never moves; `run` defaults to the file's `start_mode` |
 | Studio robot mode | `apps/vla-maas-studio/{robot_run,piper_sim}.py` | same adapter / safety / loop as `robotctl run`, plus camera frames and telemetry in a browser |
 
-Drivers today: `mock` (CPU) and `piper` (AgileX Piper over CAN, `piper_sdk>=0.6`,
-extra `piper`). ARX and Franka are next; each is one driver file, one yaml and
-one extra.
+Drivers today: `mock` (CPU), `piper` (AgileX Piper over CAN, `piper_sdk>=0.6`,
+extra `piper`) and `arx` (ARX X5 over slcan, reuses the arm PC's realarm
+`bimanual` package via `bimanual_path`; venv must be Python 3.11). Franka is
+next; each new arm is a driver file, a robot yaml and an `--embodiments`
+entry for `render_gateway.py` on the server side.
 
 ## AgileX Piper specifics (`drivers/piper.py`)
 
@@ -35,6 +37,22 @@ one extra.
   clamped; five in a row stop the episode. A delta-joint model started at rest
   hits this. Set `home_joints` to a ready pose (e.g. `[0, 1.0, -1.0, 0, 0.4, 0]`,
   check on the arm) and run `robotctl home` first.
+
+## ARX X5 specifics (`drivers/arx.py`)
+
+- CAN is slcan (CANable2, `slcand -s8`, 1 Mbps) on `can1`/`can3`; bring it up
+  with realarm's own `start_arx_dual_can.sh`, not `can_activate.sh`.
+- The venv must be Python 3.11: the binding `arx_x5_python.cpython-311` is the
+  only build, and `bimanual` imports it from `bimanual_path` on the arm PC.
+- State is seven joint values (six joints + gripper); `get_ee_pose` returns
+  `[x, y, z, qw, qx, qy, qz]` and the driver reorders to the protocol's xyzw.
+- **No speed knob:** the vendor API has no speed argument (the undocumented
+  `arx_x(500, 2000, 10)` gain triple is the only candidate). Motion runs at
+  the vendor default speed; the safety filter bounds only the control loop,
+  and `home()` sends its whole target at once — first live run `--mode slow`.
+- Joint limits and the `set_catch` gripper range in `robots/arx.yaml` are
+  placeholders: confirm from the arm's manual before any motion beyond
+  `dry_run`.
 
 ## Without hardware: the studio's Piper twin
 

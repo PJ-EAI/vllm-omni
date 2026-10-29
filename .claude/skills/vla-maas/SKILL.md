@@ -99,7 +99,7 @@ vllm serve <ckpt> --omni --deploy-config <yaml>      or  mock_policy_server.py (
   --deploy-config examples/online_serving/vla_maas/pi05_libero.yaml --enforce-eager`.
   Camera keys sent by clients must match the checkpoint's `input_features`.
 - **Connect a robot (any arm) through the standard protocol**: driver in
-  `packages/vla-maas-robot/vla_maas_robot/drivers/` (`mock`, `piper` today),
+  `packages/vla-maas-robot/vla_maas_robot/drivers/` (`mock`, `piper`, `arx` today),
   robot yaml, `robotctl check` then `robotctl run` (dry_run first). The model
   needs an `adapter:` block in the gateway yaml
   (`apps/vla-maas-gateway/model_adapters.py` docstring). Without hardware, run

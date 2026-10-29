@@ -4,14 +4,16 @@
 #
 # First bring-up of one arm against the remote gateway. Never moves the arm
 # except an optional `home`, which asks for confirmation:
-#   CAN up (Piper) -> robotctl check -> [home] -> one dry_run episode -> summary.
+#   CAN up (per driver kind) -> robotctl check -> [home] -> one dry_run episode -> summary.
 #
 #   ROBOT=piper-01.yaml KEY_FILE=piper-01.env bash bringup.sh
 #   ROBOT=piper-01-mock.yaml KEY_FILE=piper-01.env bash bringup.sh   # CPU rehearsal
 #
 # Env: ROBOT (required), KEY_FILE (file with VLA_MAAS_API_KEY=..., or export it),
 #      INSTRUCTION (default "pick up the cube"), STEPS (default 300), DO_HOME=1 to home first,
-#      CAN=can0, CAN_SCRIPT (path to piper_sdk's can_activate.sh), ROBOTCTL (default robotctl),
+#      CAN (default: the yaml's can_name/can_port, else can0), CAN_SCRIPT (piper: piper_sdk's
+#      can_activate.sh, called as "$CAN_SCRIPT $CAN 1000000"; arx: realarm's
+#      start_arx_dual_can.sh, called as "$CAN_SCRIPT" with no args), ROBOTCTL (default robotctl),
 #      OUT (default ./bringup-<robot_id>.jsonl)
 set -euo pipefail
 
@@ -19,7 +21,6 @@ set -euo pipefail
 ROBOTCTL="${ROBOTCTL:-robotctl}"
 INSTRUCTION="${INSTRUCTION:-pick up the cube}"
 STEPS="${STEPS:-300}"
-CAN="${CAN:-can0}"
 if [ -n "${KEY_FILE:-}" ]; then
   set -a
   # shellcheck disable=SC1090
@@ -27,16 +28,41 @@ if [ -n "${KEY_FILE:-}" ]; then
   set +a
 fi
 : "${VLA_MAAS_API_KEY:?no robot key: set KEY_FILE or export VLA_MAAS_API_KEY}"
-robot_id="$(sed -n 's/^robot_id: *//p' "$ROBOT" | head -1)"
+# Read one scalar from the robot yaml, stripping inline comments.
+yaml_str() { sed -n "s/^ *$1: *//p" "$ROBOT" | head -1 | sed 's/[[:space:]]*#.*//'; }
+robot_id="$(yaml_str robot_id)"
 OUT="${OUT:-$PWD/bringup-$robot_id.jsonl}"
+kind="$(yaml_str kind)"
 
-if grep -q "kind: piper" "$ROBOT"; then
-  if ! ip link show "$CAN" 2>/dev/null | grep -q "state UP"; then
-    [ -n "${CAN_SCRIPT:-}" ] || { echo "$CAN is down; run piper_sdk's can_activate.sh $CAN 1000000 or set CAN_SCRIPT" >&2; exit 1; }
-    bash "$CAN_SCRIPT" "$CAN" 1000000
-  fi
-  echo "ok   $CAN up"
+# CAN defaults to the interface the robot yaml names (can_name for piper, can_port for arx).
+if [ -z "${CAN:-}" ]; then
+  CAN="$(yaml_str can_name)"
+  [ -z "$CAN" ] && CAN="$(yaml_str can_port)"
+  CAN="${CAN:-can0}"
 fi
+
+can_up() { ip link show "$CAN" 2>/dev/null | grep -q "state UP"; }
+
+case "$kind" in
+  piper)
+    if ! can_up; then
+      [ -n "${CAN_SCRIPT:-}" ] || { echo "$CAN is down; run piper_sdk's can_activate.sh $CAN 1000000 or set CAN_SCRIPT" >&2; exit 1; }
+      bash "$CAN_SCRIPT" "$CAN" 1000000
+      can_up || { echo "$CAN still down after CAN_SCRIPT" >&2; exit 1; }
+    fi
+    echo "ok   $CAN up"
+    ;;
+  arx)  # slcan via realarm's scripts; their script brings all ARX ports up itself
+    if ! can_up; then
+      [ -n "${CAN_SCRIPT:-}" ] || { echo "$CAN is down; run realarm's start_arx_dual_can.sh (slcand on /dev/arxcan*) or set CAN_SCRIPT" >&2; exit 1; }
+      bash "$CAN_SCRIPT"
+      can_up || { echo "$CAN still down after CAN_SCRIPT" >&2; exit 1; }
+    fi
+    echo "ok   $CAN up"
+    ;;
+  mock) ;;
+  *) echo "unknown driver kind '$kind' in $ROBOT" >&2; exit 1 ;;
+esac
 
 echo "== robotctl check (no motion)"
 "$ROBOTCTL" check --robot "$ROBOT"

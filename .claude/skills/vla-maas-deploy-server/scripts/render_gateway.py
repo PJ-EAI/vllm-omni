@@ -64,7 +64,7 @@ def piper_adapter(args: argparse.Namespace) -> dict:
             "layout": ["joint_pos", {"field": "gripper", "range": args.gripper_range}],
         },
         "control_hz": args.control_hz,
-        "embodiments": ["piper"],
+        "embodiments": [e.strip() for e in args.embodiments.split(",") if e.strip()],
     }
     if args.state_dim:
         adapter["state_dim"] = args.state_dim
@@ -79,6 +79,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--model", default="pi05_piper", help="gateway route name (robots put it in gateway.model)")
     p.add_argument("--backends", required=True, help="comma-separated ws://host:port/v1/realtime/robot/openpi URLs")
     p.add_argument("--robots", required=True, help="comma-separated robot ids, e.g. piper-01,piper-02")
+    p.add_argument(
+        "--embodiments",
+        default="piper",
+        help="comma-separated embodiments the /act handshake allows, e.g. piper or arx",
+    )
     p.add_argument("--front-key", default="observation.images.base_0_rgb", help="checkpoint camera key for 'front'")
     p.add_argument("--wrist-key", default="observation.images.left_wrist_0_rgb", help="checkpoint key for 'wrist'")
     p.add_argument("--state-dim", type=int, default=32, help="checkpoint observation.state width; 0 = no padding")
@@ -96,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--request-timeout-s", type=float, default=5.0)
     args = p.parse_args(argv)
+    if not [e for e in args.embodiments.split(",") if e.strip()]:
+        p.error("--embodiments must list at least one embodiment; an empty list would allow every robot")
 
     out = Path(args.out)
     robots = [r.strip() for r in args.robots.split(",") if r.strip()]

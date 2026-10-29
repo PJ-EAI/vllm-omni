@@ -33,8 +33,9 @@ pip install "./packages/vla-maas-robot[jpeg,realsense]"   # optional extras per 
 | --- | --- | --- | --- |
 | `mock` | CPU-only simulated arm | none | [robots/mock.yaml](robots/mock.yaml) |
 | `piper` | AgileX Piper over CAN (`piper_sdk`) | `piper` | [robots/piper.yaml](robots/piper.yaml) |
+| `arx` | ARX X5 over slcan (realarm's `bimanual` stack, Python 3.11 venv) | none | [robots/arx.yaml](robots/arx.yaml) |
 
-ARX5 and Franka (via `franky`) come next. Each driver is one file under
+Franka (via `franky`) comes next. Each driver is one file under
 `drivers/`, registered in `driver.DRIVERS`.
 
 ### AgileX Piper
