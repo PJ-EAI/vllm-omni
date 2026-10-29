@@ -7,6 +7,8 @@
 #
 #   bash install_robot.sh                     # Piper + RealSense + UVC + JPEG
 #   EXTRAS=jpeg bash install_robot.sh         # CPU rehearsal (mock arm), no SDKs
+#   PYTHON=python3.11 bash install_robot.sh   # ARX X5: the venv MUST be 3.11
+#                                             # (vendor binding arx_x5_python.cpython-311)
 #
 # Env: VENV (default .venv-robot), PYTHON (default python3), EXTRAS (default piper,realsense,uvc,jpeg)
 set -euo pipefail
@@ -29,3 +31,5 @@ assert not leaked, f"server-side modules imported on the robot: {leaked}"
 print("robot client ok:", sys.executable)
 PY
 echo "robotctl: $VENV/bin/robotctl"
+echo "ARX X5 arms: this venv must be Python 3.11 (PYTHON=python3.11 above); the arx driver's"
+echo "vendor binding is built for CPython 3.11 and fails to import on any other version."

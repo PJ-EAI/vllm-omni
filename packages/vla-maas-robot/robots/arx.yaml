@@ -1,0 +1,39 @@
+# ARX X5 (方舟), single arm, on slcan. Bring CAN up first with the arm PC's
+# own script (realarm's start_arx_dual_can.sh: slcand -s8 /dev/arxcanN canN).
+# The venv must be Python 3.11: the vendor binding is arx_x5_python.cpython-311.
+# First run: robotctl check, then run in dry_run (the default), then --mode slow.
+robot_id: arx-01
+gateway:
+  url: ws://<gateway-host>:9000   # this robot's own key
+  model: pi05_arx                 # gateway route; the gateway's adapter knows the model
+  api_key_env: VLA_MAAS_API_KEY
+driver:
+  kind: arx
+  can_port: can1                  # can3 for the second arm of a bimanual rig
+  bimanual_path: /path/to/realarm/src/envs/arx_x5        # dir containing the bimanual package
+  arm_type: 0                     # 0 x5, 1 x5_master, 2 x5_2025
+  modes: [joint_pos]              # add eef_pose to use the X5's onboard solver
+  home_joints: [0.0, 0.17, 0.23, -0.06, 0.0, 0.0]   # commanded and waited for by robotctl home
+  # joint_limits: [[-2.9, 2.9], ...]  # TODO confirm from the X5 manual before live motion
+  # TODO no speed knob: the vendor API has no speed argument (arx_x(500,2000,10)
+  # is an undocumented gain triple), so joints move at the vendor default speed
+  # and home() bypasses the safety step limit -- first live run must be --mode slow.
+cameras:
+  front: {kind: realsense, width: 640, height: 480, fps: 30}
+  wrist: {kind: uvc, device: 0, width: 640, height: 480, fps: 30}
+calibration:
+  gripper: {raw_range: [0.0, 1.0], invert: false}   # TODO confirm set_catch range before live motion
+control:
+  prefetch_threshold: 5
+  blend: linear
+  blend_steps: 3
+  jpeg_quality: 85                # JPEG over the public link
+safety:
+  start_mode: dry_run
+  max_joint_step_rad: 0.05
+  slow_scale: 0.3
+  max_violations: 5
+  stale_ms: 300
+  # No workspace box by default: it must come from measured teach points on
+  # the real arm (the parked X5 sits near its base origin, inside no guessed
+  # box). Add one before --mode live.

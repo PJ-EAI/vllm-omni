@@ -1,6 +1,6 @@
 ---
 name: vla-maas-deploy-robot
-description: Deploy the VLA MaaS robot side on an arm PC (AgileX Piper today) that reaches a remote gateway over the internet - install the standalone robot client, write the robot YAML, bring CAN up, run robotctl check, home and a dry_run episode, and read the latency and safety summary before any motion. Use for setting up or debugging a real arm against a deployed gateway; use vla-maas-deploy-server for the cluster side.
+description: Deploy the VLA MaaS robot side on an arm PC (AgileX Piper or ARX X5) that reaches a remote gateway over the internet - install the standalone robot client, write the robot YAML, bring CAN up, run robotctl check, home and a dry_run episode, and read the latency and safety summary before any motion. Use for setting up or debugging a real arm against a deployed gateway; use vla-maas-deploy-server for the cluster side.
 ---
 
 # Deploy the VLA MaaS robot side (one arm PC per robot)
@@ -31,6 +31,7 @@ Run from a checkout of the `maas` branch on the arm PC.
 
    ```bash
    bash .claude/skills/vla-maas-deploy-robot/scripts/install_robot.sh   # EXTRAS=jpeg for a mock rehearsal
+   # ARX X5: PYTHON=python3.11 bash ... (the vendor binding is CPython-3.11 only)
    export PATH="$PWD/.venv-robot/bin:$PATH"
    ```
 
@@ -43,28 +44,44 @@ Run from a checkout of the `maas` branch on the arm PC.
        --robot-id piper-01 --gateway https://maas.example.com \
        --front-serial <realsense serial> --wrist-device 0 \
        --workspace 0.05 0.6 -0.4 0.4 0.02 0.5
+
+   # ARX X5 (bimanual rig: can1/can3, one yaml per arm)
+   python3 .claude/skills/vla-maas-deploy-robot/scripts/render_robot.py --kind arx --out arx-01.yaml \
+       --robot-id arx-01 --gateway ws://192.168.1.10:9000 --can can1 \
+       --bimanual-path ~/realarm/src/envs/arx_x5 --front-serial <realsense serial>
    ```
 
    - The output starts in `dry_run`, sets `prefetch_threshold: 20` for the
-     public link and uses `home_joints: [0, 1.0, -1.0, 0, 0.4, 0]`. Confirm
-     that ready pose on your arm.
+     public link and uses `home_joints: [0, 1.0, -1.0, 0, 0.4, 0]` for piper
+     (the ARX template's own home pose for arx). Confirm that ready pose on
+     your arm.
+   - ARX X5: `--bimanual-path` points at realarm's vendor stack on the arm
+     PC (`src/envs/arx_x5`); the joint limits and gripper range in the
+     template are placeholders — confirm them from the arm's manual before
+     any motion beyond `dry_run`.
    - Measure the workspace box on your table.
    - Camera keys are protocol roles (`front`, `wrist`). The gateway adapter
      maps them to model cameras.
-   - `--mock` writes a mock arm with mock cameras (embodiment `piper`). Use it
-     to rehearse against the real gateway before touching hardware.
+   - `--mock` writes a mock arm with mock cameras (embodiment of the selected
+     `--kind`). Use it to rehearse against the real gateway before touching
+     hardware.
 
 3. **Bring up**:
 
    ```bash
    ROBOT=piper-01.yaml KEY_FILE=piper-01.env CAN_SCRIPT=<piper_sdk>/can_activate.sh \
        bash .claude/skills/vla-maas-deploy-robot/scripts/bringup.sh
+
+   # ARX X5: CAN=can1 (or can3), CAN_SCRIPT=realarm's start_arx_dual_can.sh (no args)
+   ROBOT=arx-01.yaml KEY_FILE=arx-01.env CAN=can1 \
+       CAN_SCRIPT=~/realarm/scripts/start_arx_dual_can.sh \
+       bash .claude/skills/vla-maas-deploy-robot/scripts/bringup.sh
    ```
 
-   - The script runs: CAN up → `robotctl check` (driver, cameras, handshake;
-     no motion) → one `dry_run` episode → a summary of `rtt_p50_ms`,
-     `server_p50_ms`, `network_p50_ms`, `underruns`, `dropped_rows` and
-     safety clamps.
+   - The script runs: CAN up (per the driver kind) → `robotctl check` (driver,
+     cameras, handshake; no motion) → one `dry_run` episode → a summary of
+     `rtt_p50_ms`, `server_p50_ms`, `network_p50_ms`, `underruns`,
+     `dropped_rows` and safety clamps.
    - `DO_HOME=1` adds `robotctl home` before the episode, which asks for
      confirmation. Home first on a Piper: it rests with joints 2 and 3 on their
      limits, and rest-pose targets get clamped.
