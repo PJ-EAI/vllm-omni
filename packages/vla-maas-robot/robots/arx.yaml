@@ -34,4 +34,6 @@ safety:
   slow_scale: 0.3
   max_violations: 5
   stale_ms: 300
-  workspace: {x: [0.05, 0.6], y: [-0.4, 0.4], z: [0.02, 0.5]}   # TODO fit to the X5 reach
+  # No workspace box by default: it must come from measured teach points on
+  # the real arm (the parked X5 sits near its base origin, inside no guessed
+  # box). Add one before --mode live.

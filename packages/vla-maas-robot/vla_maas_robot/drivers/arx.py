@@ -6,8 +6,10 @@ Wraps the vendor stack already present on the arm PC (``realarm``): the
 ``bimanual`` package and its pybind11 binding ``arx_x5_python`` talk to the
 X5 controller over a SocketCAN port brought up with ``slcand`` (CANable2 in
 slcan mode, 1 Mbps). Nothing here is pip-installable, so the driver loads it
-lazily from a configured path and preloads the shared libraries by absolute
-path — no ``LD_LIBRARY_PATH`` needed at startup.
+lazily from ``bimanual_path``. The vendor stack also needs a sourced ROS 2
+environment (``AMENT_PREFIX_PATH``) and its ``.so`` directories on
+``LD_LIBRARY_PATH`` — the libraries carry no SONAME, so a wrapper script
+around ``robotctl`` exporting both is the supported launch path.
 
 ``SingleArm`` reports seven joint values, the seventh being the gripper;
 ``get_ee_pose`` returns ``[x, y, z, qw, qx, qy, qz]`` while the protocol
@@ -41,8 +43,9 @@ from vla_maas_robot.driver import Command, RobotDriver, RobotSpec, RobotState
 # Placeholder until the manual's values land in the robot yaml (URDF says +/-10).
 JOINT_LIMITS = np.tile([-2.9, 2.9], (6, 1))
 HOME_JOINTS = [-0.0, 0.17, 0.23, -0.06, 0.0, 0.0]  # realarm's env_reset_joint
-# Loaded by absolute path so no LD_LIBRARY_PATH is needed; missing ones are
-# skipped (they may already be resolvable through the environment).
+# Best-effort preload by absolute path; the shipped libs have no SONAME, so
+# this cannot satisfy the binding's NEEDED entries — LD_LIBRARY_PATH in a
+# robotctl wrapper is the supported launch path (see the module docstring).
 PRELOAD_LIBS = ("libkdl_parser.so", "libx5_kinematic_solver.so", "libarx_x5_src.so")
 
 
@@ -87,7 +90,7 @@ class ArxDriver(RobotDriver):
         self.bimanual_path = str(Path(bimanual_path).expanduser()) if bimanual_path else None
         base = [str(Path(p).expanduser()) for p in lib_paths] if lib_paths else None
         if base is None and bimanual_path:
-            root = Path(bimanual_path).expanduser()
+            root = Path(bimanual_path).expanduser() / "bimanual"  # the api/ tree sits inside the package
             base = [str(root / "api" / "arx_x5_src"), str(root / "api"), "/opt/ros/humble/lib"]
         self.lib_paths = base or []
         self.arm_type = int(arm_type)
@@ -122,7 +125,11 @@ class ArxDriver(RobotDriver):
                 f"set bimanual_path to the directory containing it (tried sys.path + "
                 f"{self.bimanual_path!r}). This venv is Python {py}; the binding is built "
                 f"for CPython 3.11 (arx_x5_python.cpython-311), so a 3.10 or 3.12 venv "
-                f"fails here no matter the path; {exc}"
+                f"fails here no matter the path. The stack also needs a ROS 2 environment "
+                f"(source /opt/ros/humble/setup.bash; the vendor lib requires "
+                f"AMENT_PREFIX_PATH) and its .so directories on LD_LIBRARY_PATH — the "
+                f"libs have no SONAME, so wrap robotctl in a script that exports it "
+                f"(see 'ARX X5 specifics' in the vla-maas skill); {exc}"
             ) from exc
 
     def connect(self) -> None:

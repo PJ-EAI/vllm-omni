@@ -44,6 +44,11 @@ entry for `render_gateway.py` on the server side.
   with realarm's own `start_arx_dual_can.sh`, not `can_activate.sh`.
 - The venv must be Python 3.11: the binding `arx_x5_python.cpython-311` is the
   only build, and `bimanual` imports it from `bimanual_path` on the arm PC.
+- Run `robotctl` through a wrapper that sources ROS 2 (`source
+  /opt/ros/humble/setup.bash`; the vendor lib needs `AMENT_PREFIX_PATH`) and
+  exports `LD_LIBRARY_PATH=<bimanual>/api/arx_x5_src:<bimanual>/api:/opt/ros/
+  humble/lib` — the vendor `.so`s carry no SONAME, so the dynamic loader must
+  find them by search path (verified on the real arm PC).
 - State is seven joint values (six joints + gripper); `get_ee_pose` returns
   `[x, y, z, qw, qx, qy, qz]` and the driver reorders to the protocol's xyzw.
 - **No speed knob:** the vendor API has no speed argument (the undocumented

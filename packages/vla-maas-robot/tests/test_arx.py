@@ -161,6 +161,7 @@ def test_bimanual_path_expands_user(sdk):
     driver = ArxDriver(bimanual_path="~/realarm/src/envs/arx_x5")
     assert driver.bimanual_path == str(Path("~/realarm/src/envs/arx_x5").expanduser())
     assert all(p.startswith("/") for p in driver.lib_paths)  # preload paths absolute too
+    assert driver.lib_paths[0].endswith("/bimanual/api/arx_x5_src")  # api tree sits inside the package
 
 
 def test_protect_on_close(sdk):
