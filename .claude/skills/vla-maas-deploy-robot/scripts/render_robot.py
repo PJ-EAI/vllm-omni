@@ -83,7 +83,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--arm-type", type=int, default=0, choices=(0, 1, 2), help="arx only: 0 x5, 1 x5_master, 2 x5_2025")
     p.add_argument("--speed-pct", type=int, default=30)
-    p.add_argument("--home-joints", type=float, nargs=6, default=None, help="default: piper READY_POSE, else the template's")
+    p.add_argument(
+        "--home-joints",
+        type=float,
+        nargs=6,
+        default=None,
+        help="default: piper READY_POSE, else the template's",
+    )
     p.add_argument("--front-serial", default=None, help="RealSense serial for the front camera")
     p.add_argument("--wrist-device", default="0", help="UVC index or /dev/video path for the wrist camera")
     p.add_argument("--prefetch", type=int, default=20, help="rows left when the next request starts")
