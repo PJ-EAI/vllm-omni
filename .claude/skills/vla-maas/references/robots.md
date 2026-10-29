@@ -18,7 +18,8 @@ the studio without hardware, then run it for real. Code:
 Drivers today: `mock` (CPU), `piper` (AgileX Piper over CAN, `piper_sdk>=0.6`,
 extra `piper`) and `arx` (ARX X5 over slcan, reuses the arm PC's realarm
 `bimanual` package via `bimanual_path`; venv must be Python 3.11). Franka is
-next; each is one driver file and one yaml.
+next; each new arm is a driver file, a robot yaml and an `--embodiments`
+entry for `render_gateway.py` on the server side.
 
 ## AgileX Piper specifics (`drivers/piper.py`)
 

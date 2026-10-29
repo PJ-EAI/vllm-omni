@@ -4,16 +4,16 @@
 # First run: robotctl check, then run in dry_run (the default), then --mode slow.
 robot_id: arx-01
 gateway:
-  url: ws://192.168.1.117:9000    # this robot's own key
+  url: ws://<gateway-host>:9000   # this robot's own key
   model: pi05_arx                 # gateway route; the gateway's adapter knows the model
   api_key_env: VLA_MAAS_API_KEY
 driver:
   kind: arx
   can_port: can1                  # can3 for the second arm of a bimanual rig
-  bimanual_path: /home/pjlab-rl/realarm/src/envs/arx_x5   # dir containing the bimanual package
+  bimanual_path: /path/to/realarm/src/envs/arx_x5        # dir containing the bimanual package
   arm_type: 0                     # 0 x5, 1 x5_master, 2 x5_2025
   modes: [joint_pos]              # add eef_pose to use the X5's onboard solver
-  home_joints: [0.0, 0.17, 0.23, -0.06, 0.0, 0.0]
+  home_joints: [0.0, 0.17, 0.23, -0.06, 0.0, 0.0]   # commanded and waited for by robotctl home
   # joint_limits: [[-2.9, 2.9], ...]  # TODO confirm from the X5 manual before live motion
 cameras:
   front: {kind: realsense, width: 640, height: 480, fps: 30}

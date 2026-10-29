@@ -24,15 +24,15 @@ class FakeSingleArm:
         self.joints = list(HOME_JOINTS) + [0.0]  # 7 values, last is the gripper
         self.speeds = [0.0] * 7
         self.pose = [0.3, -0.1, 0.2, 1.0, 0.0, 0.0, 0.0]  # xyz + quat wxyz
-        self.home_pose = list(HOME_JOINTS)
-        self.reach_home = True
+        self.freeze = False  # when True, commands are recorded but the arm does not move
 
     def _record(self, name, *args):
         self.calls.append((name, args))
 
     def set_joint_positions(self, positions):
         self._record("set_joint_positions", tuple(np.asarray(positions, dtype=float)))
-        self.joints[:6] = list(np.asarray(positions, dtype=float))
+        if not self.freeze:
+            self.joints[:6] = list(np.asarray(positions, dtype=float))
 
     def set_ee_pose(self, pos, quat):
         self._record("set_ee_pose", tuple(pos), tuple(quat))
@@ -139,12 +139,28 @@ def test_hold_home_and_timeout(sdk):
     arm.joints = [0.1, 0.2, 0.3, -0.1, -0.2, 0.0, 0.0]
     driver.hold()
     assert arm.sent("set_joint_positions")[-1] == ((0.1, 0.2, 0.3, -0.1, -0.2, 0.0),)
-    driver.home()  # go_home moves the fake onto HOME_JOINTS
-    assert ("go_home", ()) in arm.calls
-    arm.reach_home = False
-    arm.joints = [1.0] * 7  # parked away from home, and go_home no longer moves
+    driver.home()  # commands the configured home joints, then waits for them
+    assert arm.sent("set_joint_positions")[-1] == (tuple(HOME_JOINTS),)
+    assert not [n for n, _ in arm.calls if n == "go_home"]
+    arm.freeze = True  # commands recorded, arm parked away from home
+    arm.joints = [1.0] * 7
     with pytest.raises(RuntimeError, match="home"):
         driver.home()
+
+
+def test_home_commands_the_configured_joints(sdk):
+    """The yaml's home_joints is what the arm is told to move to (not vendor go_home)."""
+    custom = [0.1, 0.2, 0.3, -0.1, -0.2, 0.5]
+    driver, arm = _driver(sdk, home_joints=custom, home_timeout_s=0.2)
+    arm.joints = [1.0] * 7
+    driver.home()
+    assert arm.sent("set_joint_positions")[-1] == (tuple(custom),)
+
+
+def test_bimanual_path_expands_user(sdk):
+    driver = ArxDriver(bimanual_path="~/realarm/src/envs/arx_x5")
+    assert driver.bimanual_path == str(Path("~/realarm/src/envs/arx_x5").expanduser())
+    assert all(p.startswith("/") for p in driver.lib_paths)  # preload paths absolute too
 
 
 def test_protect_on_close(sdk):

@@ -101,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--request-timeout-s", type=float, default=5.0)
     args = p.parse_args(argv)
+    if not [e for e in args.embodiments.split(",") if e.strip()]:
+        p.error("--embodiments must list at least one embodiment; an empty list would allow every robot")
 
     out = Path(args.out)
     robots = [r.strip() for r in args.robots.split(",") if r.strip()]

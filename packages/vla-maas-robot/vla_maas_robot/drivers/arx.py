@@ -77,7 +77,7 @@ class ArxDriver(RobotDriver):
             native_hz=200.0,
         )
         self.can_port = can_port
-        self.bimanual_path = bimanual_path
+        self.bimanual_path = str(Path(bimanual_path).expanduser()) if bimanual_path else None
         base = [str(Path(p).expanduser()) for p in lib_paths] if lib_paths else None
         if base is None and bimanual_path:
             root = Path(bimanual_path).expanduser()
@@ -109,10 +109,13 @@ class ArxDriver(RobotDriver):
         try:
             return importlib.import_module("bimanual").SingleArm
         except ImportError as exc:
+            py = f"{sys.version_info.major}.{sys.version_info.minor}"
             raise ImportError(
                 f"ArxDriver needs the vendor 'bimanual' package (realarm's ARX X5 stack): "
                 f"set bimanual_path to the directory containing it (tried sys.path + "
-                f"{self.bimanual_path!r}); {exc}"
+                f"{self.bimanual_path!r}). This venv is Python {py}; the binding is built "
+                f"for CPython 3.11 (arx_x5_python.cpython-311), so a 3.10 or 3.12 venv "
+                f"fails here no matter the path; {exc}"
             ) from exc
 
     def connect(self) -> None:
@@ -172,8 +175,13 @@ class ArxDriver(RobotDriver):
             self._require().set_joint_positions(self.read_state().joint_pos)
 
     def home(self) -> None:
+        """Move to ``home_joints`` by commanding them (same semantics as Piper).
+
+        The vendor ``go_home()`` target is undocumented, so it is not used:
+        the configured joints are both commanded and validated.
+        """
         with self._lock:
-            self._require().go_home()
+            self._require().set_joint_positions(self.home_joints)
         deadline = time.monotonic() + self.home_timeout_s
         while time.monotonic() < deadline:
             if np.max(np.abs(self.read_state().joint_pos - self.home_joints)) < self.home_tol_rad:
