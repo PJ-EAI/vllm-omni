@@ -4,9 +4,14 @@ import base64
 import time
 
 import numpy as np
-from monitor import Backend, ModelStats, SessionView, render_detail
+from monitor import DEFAULT_FPS, MAX_FPS, Backend, ModelStats, SessionView, _fps, render_detail
 from openpi_client import msgpack_numpy
 from vla_maas_protocol import encode_jpeg
+
+
+def test_watch_fps_clamps_and_falls_back_on_malformed_values():
+    assert _fps(30) == MAX_FPS and _fps(0.1) == 0.5  # clamped into [0.5, MAX_FPS]
+    assert _fps("fast") == DEFAULT_FPS and _fps(None) == DEFAULT_FPS  # malformed falls back, not raise
 
 
 def test_history_is_one_point_per_second_with_gaps_as_zero(monkeypatch):

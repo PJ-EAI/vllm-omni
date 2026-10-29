@@ -60,6 +60,14 @@ def _percentiles(values) -> tuple[float | None, float | None]:
     return float(np.percentile(lat, 50)), float(np.percentile(lat, 99))
 
 
+def _fps(value: Any) -> float:
+    """A watch request's fps, clamped into range; malformed values fall back, not raise."""
+    try:
+        return min(MAX_FPS, max(0.5, float(value)))
+    except (TypeError, ValueError):
+        return DEFAULT_FPS
+
+
 @dataclass
 class Backend:
     url: str
@@ -447,7 +455,7 @@ class Monitor:
             kind = msg.get("type") if isinstance(msg, dict) else None
             if kind == "watch":
                 watch.session_id = str(msg.get("session_id"))
-                watch.fps = min(MAX_FPS, max(0.5, float(msg.get("fps") or DEFAULT_FPS)))
+                watch.fps = _fps(msg.get("fps"))
                 watch.next_detail = 0.0
                 watch.wake.set()
             elif kind == "unwatch":
