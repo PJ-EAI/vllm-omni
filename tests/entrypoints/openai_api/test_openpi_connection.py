@@ -457,3 +457,15 @@ def test_handle_connection_reset_endpoint_resets_next_infer(monkeypatch):
     serving.reset.assert_called_once_with({})
     assert websocket.sent_bytes[2] == {"status": "reset successful"}
     assert websocket.sent_texts == []
+
+
+def test_handshake_carries_server_info_beside_policy_config(monkeypatch):
+    monkeypatch.setattr(openpi_connection, "_pack", lambda obj: obj)
+    websocket = FakeWebSocket([{"type": "websocket.disconnect"}])
+    serving = _serving_mock()
+    serving.server_info = {"checkpoint": "/ckpt/a", "model_type": "Pi05Pipeline"}
+
+    asyncio.run(openpi_connection.RobotRealtimeConnection(websocket, serving).handle_connection())
+
+    assert websocket.sent_bytes[0]["action_space"] == "joint_position"
+    assert websocket.sent_bytes[0]["server"] == {"checkpoint": "/ckpt/a", "model_type": "Pi05Pipeline"}

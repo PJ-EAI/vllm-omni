@@ -8,6 +8,9 @@
 #
 # Env: CONFIG (required), GW_HOST (default 127.0.0.1), GW_PORT (default 9000),
 #      PYTHON (default python3), LOG_DIR (default ./maas-gateway)
+# Logs: $LOG_DIR/gateway.log (text) and $LOG_DIR/gateway.jsonl (one JSON event per line, every line
+#       tagged with session / robot / model / revision / checkpoint / backend; see apps/vla-maas-gateway/maas_log.py)
+# Swap a model's checkpoint or type live: swap_model.py (or edit CONFIG, then kill -HUP the gateway pid)
 # Stop: kill $(cat $LOG_DIR/gateway.pid)
 set -euo pipefail
 
@@ -28,7 +31,7 @@ export NO_PROXY="$no_proxy"
   || { echo "missing gateway deps: pip install ./packages/vla-maas-protocol websockets msgpack msgpack-numpy pyyaml numpy" >&2; exit 1; }
 
 "$PYTHON" "$ROOT/apps/vla-maas-gateway/gateway.py" --config "$CONFIG" --host "$GW_HOST" --port "$GW_PORT" \
-  >"$LOG_DIR/gateway.log" 2>&1 &
+  --log-file "$LOG_DIR/gateway.jsonl" >"$LOG_DIR/gateway.log" 2>&1 &
 echo $! >"$LOG_DIR/gateway.pid"
 for _ in $(seq 1 50); do
   curl -sf --noproxy '*' "http://127.0.0.1:$GW_PORT/healthz" >/dev/null 2>&1 && { echo "gateway up on $GW_HOST:$GW_PORT pid=$(cat "$LOG_DIR/gateway.pid")"; exit 0; }

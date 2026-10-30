@@ -4,13 +4,26 @@ api_keys:
 
 # Seconds to wait for one inference reply before failing the request.
 request_timeout_s: 5.0
+# Seconds a reload waits for each new backend's handshake before rejecting the swap.
+probe_timeout_s: 15.0
+
+# Structured logs (maas_log.py). The file is always JSON lines; --log-file overrides it.
+logging:
+  format: text          # stderr: text | json
+  # file: logs/gateway.jsonl
+  requests: all         # all = one line per inference; errors = failures only
 
 # Each model lists OpenPI endpoints (vllm-omni or any OpenPI server); sessions go
 # to the least-loaded one. Native OpenPI clients use /v1/robot/<model>/openpi.
 # A model with an `adapter` is also served on the standard Robot protocol,
 # /v1/robot/<model>/act, which robots use without knowing the model's keys.
+# checkpoint / model_type are labels: logged on every line, returned to robots
+# in `ready`, and checked against what a backend reports when a reload swaps
+# them (GET /v1/admin/reload or SIGHUP). Edit them with the backends to swap live.
 models:
   pi05:
+    # checkpoint: lerobot/pi05_libero   # labels of what the backends serve
+    # model_type: pi05
     backends:
       - ws://127.0.0.1:8001/v1/realtime/robot/openpi
   internvla_a1:

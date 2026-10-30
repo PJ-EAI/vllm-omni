@@ -9,13 +9,15 @@
 #   MOCK=1 GPUS="0 1" bash serve_pi05.sh          # CPU mock backends, same ports and URLs
 #
 # Env:
-#   CKPT        checkpoint (default lerobot/pi05_base: link and latency tests only, dry_run)
+#   CKPT        checkpoint (default lerobot/pi05_base: link and latency tests only, dry_run); reported to
+#               the gateway in the handshake, which checks it against the route's checkpoint label
 #   DEPLOY      deploy yaml (default vllm_omni/deploy/pi05.yaml)
 #   GPUS        GPU ids, one backend each (default "0")
 #   BASE_PORT   first port; backend i uses BASE_PORT+i (default 8001)
 #   HOST        bind address (default 0.0.0.0) and ADVERTISE host in the URLs (default hostname)
 #   LOG_DIR     logs and pids (default ./maas-backends)
 #   PYTHON      interpreter for MOCK=1 (default python3)
+#   MODEL_TYPE  model type the MOCK=1 backends report (default mock); a real backend reports its pipeline class
 #   VLLM        vllm executable (default vllm; e.g. $PWD/.venv-pi05/bin/vllm)
 #   PREFETCH    1 (default): download CKPT and the gated tokenizer once before starting, so
 #               several backends do not all download on first start and auth fails early
@@ -61,7 +63,8 @@ for gpu in $GPUS; do
   if [ "$MOCK" = 1 ]; then
     # Mock keys match the Piper adapter's defaults, so the same gateway.yaml works.
     "$PYTHON" "$ROOT/examples/online_serving/vla_maas/mock_policy_server.py" --host "$HOST" --port "$port" \
-      --latency-ms 150 --jitter-ms 20 --base-camera-key observation.images.base_0_rgb >"$log" 2>&1 &
+      --latency-ms 150 --jitter-ms 20 --base-camera-key observation.images.base_0_rgb \
+      --checkpoint "$CKPT" --model-type "${MODEL_TYPE:-mock}" >"$log" 2>&1 &
   else
     CUDA_VISIBLE_DEVICES="$gpu" "$VLLM" serve "$CKPT" --omni --host "$HOST" --port "$port" \
       --deploy-config "$DEPLOY" --enforce-eager --disable-log-stats \

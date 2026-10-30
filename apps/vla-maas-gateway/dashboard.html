@@ -272,12 +272,14 @@ function renderModels() {
     const rps = last.length ? last.reduce((a, p) => a + p.requests, 0) / last.length : null;
     const p99Class = m.relay_p99_ms == null ? '' : (m.relay_p99_ms <= BUDGET_MS ? 'ok' : 'warn');
     const maxActive = Math.max(1, ...m.backends.map(b => b.active));
+    const current = m.backends.find(b => b.state !== 'draining');
+    const serving = current ? [current.checkpoint, current.model_type, current.revision].filter(Boolean).map(esc).join(' · ') : '已暂停（替换中）';
     const backends = m.backends.map(b => `<div class="backend">
-        <span class="url" title="${esc(b.url)}">${esc(shortUrl(b.url))}</span>
+        <span class="url" title="${esc(b.url)} ${esc(b.revision || '')} ${esc(b.checkpoint || '')}">${esc(shortUrl(b.url))}${b.state === 'draining' ? ' <span class="warn">排空中</span>' : ''}</span>
         <span class="bar" title="${b.active} 个会话"><span style="width:${(b.active / maxActive) * 100}%"></span></span>
         <span>${b.active} 会话 · ${b.requests} 请求${b.errors ? ` · <span class="warn">${b.errors} 错误</span>` : ''}</span>
       </div>`).join('');
-    return `<section class="card"><h3>${esc(model)}</h3><div class="stats">
+    return `<section class="card"><h3>${esc(model)}</h3><div class="legend">${serving}</div><div class="stats">
       <div class="stat"><div class="v">${pct(m.success_rate)}</div><div class="l">成功率（${m.episodes} 回合）</div></div>
       <div class="stat"><div class="v">${fmt(m.relay_p50_ms)}</div><div class="l">p50 延迟 ms</div></div>
       <div class="stat"><div class="v ${p99Class}">${fmt(m.relay_p99_ms)}</div><div class="l">p99 延迟 ms</div></div>

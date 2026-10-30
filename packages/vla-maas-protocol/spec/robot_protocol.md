@@ -75,7 +75,9 @@ The robot should resize images to the requested size before sending them.
 }
 ```
 
-The gateway answers `{"type": "ready", "session_id": ...}` or an `error` with
+The gateway answers `{"type": "ready", "session_id": ...}` (optionally with
+`revision`, `checkpoint` and `model_type`: what serves this session, for the
+robot's logs; robots must ignore keys they do not know) or an `error` with
 `code: "incompatible"` and the list of `problems`, then closes with 4400.
 Compatible means: every required camera role and state field is offered, and
 the model's action space is in `action_spaces`. A server accepts its own
