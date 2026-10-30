@@ -18,6 +18,9 @@ from vla_maas_protocol import geometry as geo
 
 from vla_maas_robot.driver import Command, RobotSpec, RobotState
 
+# protocol eef_pose width: xyz (m) + quaternion xyzw
+_EEF_WIDTH = 3 + geo.rotation_dim("quat")
+
 
 @dataclass
 class Calibration:
@@ -117,6 +120,16 @@ class RobotAdapter:
             std_state["eef_pose"] = self.pose_to_std(np.asarray(state.eef_pose)).astype(np.float32)
         if state.gripper is not None:
             std_state["gripper"] = np.array([self.gripper_to_std(state.gripper)], dtype=np.float32)
+        if self.server is not None:
+            # Fail here, with the field names, instead of as a gateway "bad_obs"
+            # after the round trip. The gateway derives these from the adapter
+            # it serves the model with, so they are the real contract.
+            missing_roles = [role for role in self.server.requires.images if role not in frames]
+            if missing_roles:
+                raise ValueError(f"model needs camera(s) {missing_roles}; robot has {sorted(frames)}")
+            missing_state = [name for name in self.server.requires.state if name not in std_state]
+            if missing_state:
+                raise ValueError(f"model needs state {missing_state}; driver provides {sorted(std_state)}")
         return {
             "type": "obs",
             "seq": seq,
@@ -128,16 +141,42 @@ class RobotAdapter:
         }
 
     def to_commands(self, msg: dict) -> list[Command]:
+        """Translate one action chunk into absolute commands.
+
+        The server names its action space in every chunk; every valid space is
+        already one the robot advertised in its hello. This validates the name
+        and the layout before converting, so a model/served-adapter mismatch
+        fails loudly instead of feeding pose numbers to a joint controller.
+        """
         if msg.get("mode", "absolute") != "absolute":
             raise ValueError(f"expected absolute actions, got {msg.get('mode')!r}")
-        space, actions = msg["space"], msg["actions"]
+        space = msg.get("space")
+        provides = self.server.provides if self.server else None
+        if provides is not None and space != provides.space:
+            raise ValueError(f"server sent {space!r} actions but its handshake advertised {provides.space!r}")
+        if space not in self.spec.modes:
+            raise ValueError(f"{self.spec.embodiment} accepts {list(self.spec.modes)}, server sent {space!r}")
+        actions = msg.get("actions") or {}
+        if space not in actions:
+            raise ValueError(f"actions message has no {space!r} column; got {sorted(actions)}")
         arm = np.asarray(actions[space], dtype=np.float64)
+        width = _EEF_WIDTH if space == "eef_pose" else self.spec.dof
+        if arm.ndim != 2 or arm.shape[0] < 1:
+            raise ValueError(f"{space} actions must be [rows, {width}], got {arm.shape}")
+        if arm.shape[1] != width:
+            raise ValueError(f"{space} actions have width {arm.shape[1]}, expected {width}")
+        if not np.isfinite(arm).all():
+            raise ValueError(f"{space} actions contain NaN or Inf")
         grip = actions.get("gripper")
-        grip = None if grip is None else np.asarray(grip, dtype=np.float64).reshape(len(arm), -1)[:, 0]
+        if grip is not None:
+            grip = np.asarray(grip, dtype=np.float64)
+            if grip.ndim != 2 or grip.shape[0] != len(arm):
+                raise ValueError(f"gripper actions have shape {grip.shape}, expected ({len(arm)}, 1)")
+            grip = grip[:, 0]
+            if not np.isfinite(grip).all():
+                raise ValueError("gripper actions contain NaN or Inf")
         if space == "eef_pose":
             arm = np.stack([self.pose_from_std(row) for row in arm])
-        elif arm.shape[1] != self.spec.dof:
-            raise ValueError(f"joint_pos actions have width {arm.shape[1]}, robot dof is {self.spec.dof}")
         return [
             Command(
                 mode=space,

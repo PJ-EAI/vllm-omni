@@ -19,6 +19,11 @@ PYTHON="${PYTHON:-python3}"
 LOG_DIR="${LOG_DIR:-$PWD/maas-gateway}"
 mkdir -p "$LOG_DIR"
 
+# The gateway's backend websockets and the local health check must not be sent
+# through an HTTP proxy when the launching shell has one configured.
+export no_proxy="localhost,127.0.0.1${no_proxy:+,$no_proxy}"
+export NO_PROXY="$no_proxy"
+
 "$PYTHON" -c "import websockets, msgpack, yaml, numpy, vla_maas_protocol" \
   || { echo "missing gateway deps: pip install ./packages/vla-maas-protocol websockets msgpack msgpack-numpy pyyaml numpy" >&2; exit 1; }
 
@@ -26,7 +31,7 @@ mkdir -p "$LOG_DIR"
   >"$LOG_DIR/gateway.log" 2>&1 &
 echo $! >"$LOG_DIR/gateway.pid"
 for _ in $(seq 1 50); do
-  curl -sf "http://127.0.0.1:$GW_PORT/healthz" >/dev/null 2>&1 && { echo "gateway up on $GW_HOST:$GW_PORT pid=$(cat "$LOG_DIR/gateway.pid")"; exit 0; }
+  curl -sf --noproxy '*' "http://127.0.0.1:$GW_PORT/healthz" >/dev/null 2>&1 && { echo "gateway up on $GW_HOST:$GW_PORT pid=$(cat "$LOG_DIR/gateway.pid")"; exit 0; }
   kill -0 "$(cat "$LOG_DIR/gateway.pid")" 2>/dev/null || break
   sleep 0.2
 done

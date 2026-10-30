@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
-"""Write a gateway YAML for one Piper-shaped π0.5 route and a fleet of robots.
+"""Write a gateway YAML for one π0.5 route and a fleet of robots.
 
 Generates an operator key and one key per robot (kept if the output files
 already exist, so re-running adds robots without rotating keys), then writes:
@@ -9,9 +9,18 @@ already exist, so re-running adds robots without rotating keys), then writes:
     <out>/keys/<robot>.env   VLA_MAAS_API_KEY=... to copy to that robot PC
     <out>/keys/operator.env  VLA_MAAS_OPERATOR_KEY=... for curl / dashboard
 
+Joint-space (Piper) checkpoint:
+
     python3 render_gateway.py --out deploy/ --model pi05_piper \
         --backends ws://gpu-1:8001/v1/realtime/robot/openpi,ws://gpu-1:8002/v1/realtime/robot/openpi \
         --robots piper-01,piper-02 --state-dim 32 --control-hz 30
+
+Cartesian delta-pose checkpoint (ARX X5; 6D delta EEF pose + absolute gripper):
+
+    python3 render_gateway.py --out deploy/ --model pi05 --action-space eef_pose \
+        --rotation axis_angle --gripper-range 0 3.449 --embodiments arx \
+        --backends ws://127.0.0.1:8001/v1/realtime/robot/openpi \
+        --robots arx-01 --state-dim 32 --control-hz 30
 """
 
 from __future__ import annotations
@@ -48,21 +57,32 @@ def _key(path: Path, name: str) -> str:
     return key
 
 
-def piper_adapter(args: argparse.Namespace) -> dict:
-    """π0.5 with a front and a wrist camera, 6 joints + gripper, absolute joint actions.
+def model_adapter(args: argparse.Namespace) -> dict:
+    """π0.5 with a front and a wrist camera and one state vector.
 
-    A LeRobot fine-tune's normalization and relative-to-absolute conversion run
+    ``--action-space joint_pos``: 6 joints + gripper, absolute joint targets. A
+    LeRobot fine-tune's normalization and relative-to-absolute conversion run
     in the vllm-omni server, so the layout here is absolute.
+
+    ``--action-space eef_pose``: 6D pose + gripper, for Cartesian delta-pose
+    checkpoints (``*_deltapose_*``). The pose columns are deltas from the
+    observed pose and the gripper column is absolute; the gateway composes the
+    deltas into absolute targets (``delta * observed``) before the robot sees
+    them, so the robot client only ever receives absolute targets.
     """
+    gripper = {"field": "gripper", "range": args.gripper_range}
+    if args.action_space == "eef_pose":
+        state = [{"field": "eef_pose", "rotation": args.rotation}, gripper]
+        layout = [{"field": "eef_pose", "mode": args.eef_mode, "rotation": args.rotation}, gripper]
+    else:
+        state = ["joint_pos", gripper]
+        layout = ["joint_pos", gripper]
     adapter = {
         "kind": "generic",
         "images": {"front": args.front_key, "wrist": args.wrist_key},
         "image_size": [224, 224],
-        "state": ["joint_pos", {"field": "gripper", "range": args.gripper_range}],
-        "action": {
-            "space": "joint_pos",
-            "layout": ["joint_pos", {"field": "gripper", "range": args.gripper_range}],
-        },
+        "state": state,
+        "action": {"space": args.action_space, "layout": layout},
         "control_hz": args.control_hz,
         "embodiments": [e.strip() for e in args.embodiments.split(",") if e.strip()],
     }
@@ -83,6 +103,24 @@ def main(argv: list[str] | None = None) -> int:
         "--embodiments",
         default="piper",
         help="comma-separated embodiments the /act handshake allows, e.g. piper or arx",
+    )
+    p.add_argument(
+        "--action-space",
+        choices=("joint_pos", "eef_pose"),
+        default="joint_pos",
+        help="what the model outputs: absolute joint targets (default) or Cartesian pose",
+    )
+    p.add_argument(
+        "--eef-mode",
+        choices=("delta", "absolute"),
+        default="delta",
+        help="eef_pose only: model columns are deltas from the observed pose (default) or absolute targets",
+    )
+    p.add_argument(
+        "--rotation",
+        choices=("axis_angle", "rpy", "quat"),
+        default="axis_angle",
+        help="eef_pose only: rotation encoding the checkpoint was trained with (default axis_angle)",
     )
     p.add_argument("--front-key", default="observation.images.base_0_rgb", help="checkpoint camera key for 'front'")
     p.add_argument("--wrist-key", default="observation.images.left_wrist_0_rgb", help="checkpoint key for 'wrist'")
@@ -117,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     config = {
         "api_keys": [operator],
         "request_timeout_s": args.request_timeout_s,
-        "models": {args.model: {"backends": backends, "adapter": piper_adapter(args)}},
+        "models": {args.model: {"backends": backends, "adapter": model_adapter(args)}},
         "robots": {
             rid: {"api_key": _key(out / "keys" / f"{rid}.env", "VLA_MAAS_API_KEY"), "models": [args.model]}
             for rid in robots

@@ -13,7 +13,7 @@ from vla_maas_robot.adapter import Calibration, RobotAdapter
 from vla_maas_robot.cameras import MockCamera, make_camera
 from vla_maas_robot.client import act_url
 from vla_maas_robot.config import load_robot_config
-from vla_maas_robot.driver import Command, make_driver
+from vla_maas_robot.driver import Command, RobotState, make_driver
 from vla_maas_robot.drivers.mock import MockDriver
 from vla_maas_robot.loop import ChunkQueue, ControlLoop, LoopConfig
 from vla_maas_robot.safety import SafetyConfig, SafetyError, SafetyFilter
@@ -70,6 +70,76 @@ def test_adapter_obs_and_commands():
     assert [c.gripper for c in cmds] == pytest.approx([0.0, 0.04, 0.08])
     with pytest.raises(ValueError):
         adapter.to_commands({**msg, "actions": {"joint_pos": np.ones((3, 7))}})
+
+
+def _server_eef(horizon=10, hz=30.0) -> ServerHello:
+    return ServerHello(
+        model="m",
+        requires=Requirements(images={"front": [64, 64]}, state=["eef_pose", "gripper"]),
+        provides=Provides(
+            space="eef_pose",
+            fields=["eef_pose", "gripper"],
+            horizon=horizon,
+            control_hz=hz,
+        ),
+    )
+
+
+def test_adapter_eef_delta_actions():
+    """A pose-space model's chunk arrives as absolute targets after the gateway
+    composes the deltas; the client only has to forward them to the driver."""
+    driver = MockDriver(dof=6, modes=("joint_pos", "eef_pose"))
+    adapter = RobotAdapter(driver.spec, ["front"], Calibration(gripper_raw_range=(0.0, 0.08)))
+    adapter.configure(_server_eef())
+    pose = np.array([0.4, 0.0, 0.2, 0.0, 0.0, 0.0, 1.0])
+    msg = {
+        "space": "eef_pose",
+        "mode": "absolute",
+        "actions": {"eef_pose": np.stack([pose, pose]), "gripper": np.array([[0.0], [1.0]])},
+    }
+    cmds = adapter.to_commands(msg)
+    assert [c.mode for c in cmds] == ["eef_pose", "eef_pose"]
+    np.testing.assert_allclose(cmds[0].target, pose)
+    assert [c.gripper for c in cmds] == pytest.approx([0.0, 0.08])
+
+
+def test_adapter_rejects_action_contract_mismatch():
+    driver = MockDriver(dof=6, modes=("joint_pos", "eef_pose"))
+    adapter = RobotAdapter(driver.spec, ["front"], Calibration())
+    adapter.configure(_server_eef())
+    with pytest.raises(ValueError, match="advertised"):
+        adapter.to_commands({"space": "joint_pos", "mode": "absolute", "actions": {"joint_pos": np.ones((2, 6))}})
+    with pytest.raises(ValueError, match="width 6"):
+        adapter.to_commands({"space": "eef_pose", "mode": "absolute", "actions": {"eef_pose": np.ones((2, 6))}})
+    with pytest.raises(ValueError, match="NaN or Inf"):
+        bad = np.full((2, 7), np.nan)
+        adapter.to_commands({"space": "eef_pose", "mode": "absolute", "actions": {"eef_pose": bad}})
+    with pytest.raises(ValueError, match=r"expected \(2, 1\)"):
+        adapter.to_commands(
+            {
+                "space": "eef_pose",
+                "mode": "absolute",
+                "actions": {"eef_pose": np.zeros((2, 7)), "gripper": np.zeros((3, 1))},
+            }
+        )
+    with pytest.raises(ValueError, match="accepts"):
+        # no handshake: the driver's own mode list must still gate the space
+        RobotAdapter(MockDriver(dof=6).spec, [], Calibration()).to_commands(
+            {"space": "eef_pose", "mode": "absolute", "actions": {"eef_pose": np.zeros((1, 7))}}
+        )
+
+
+def test_adapter_obs_reports_missing_server_inputs():
+    driver = MockDriver(dof=6)
+    adapter = RobotAdapter(driver.spec, ["front"], Calibration())
+    adapter.configure(_server_eef())
+    state = driver.read_state()
+    with pytest.raises(ValueError, match="camera"):
+        adapter.build_obs(state, {}, seq=1, instruction="", episode_id="e")
+    frames = {"front": (0.0, np.zeros((32, 32, 3), np.uint8))}
+    no_pose = RobotState(t=state.t, joint_pos=state.joint_pos, eef_pose=None, gripper=state.gripper)
+    with pytest.raises(ValueError, match="state"):
+        adapter.build_obs(no_pose, frames, seq=1, instruction="", episode_id="e")
 
 
 def test_adapter_base_frame_round_trip():
