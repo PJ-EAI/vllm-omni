@@ -83,7 +83,7 @@ class ArxDriver(RobotDriver):
             joint_limits=limits,
             max_joint_vel=np.full(6, max_joint_vel),
             modes=tuple(modes),
-            gripper_range=gripper_range,
+            gripper_range=tuple(float(v) for v in gripper_range),  # yaml lists arrive as lists
             native_hz=200.0,
         )
         self.can_port = can_port
