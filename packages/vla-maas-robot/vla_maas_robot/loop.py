@@ -34,6 +34,7 @@ class LoopConfig:
     control_hz: float | None = None  # None = the model's control_hz from the handshake
     execute_steps: int | None = None  # use at most this many rows of each chunk
     prefetch_threshold: int = 10  # request the next chunk when this many rows remain
+    in_flight: int = 1  # concurrent policy requests; >1 pipelines chunks to outpace a long RTT
     blend: str = "none"  # none | linear
     blend_steps: int = 5
     jpeg_quality: int | None = None  # set (e.g. 90) to send JPEG over slow links
@@ -48,6 +49,8 @@ class LoopConfig:
         cfg = cls(**d)
         if cfg.blend not in ("none", "linear"):
             raise ValueError(f"blend must be none or linear, got {cfg.blend!r}")
+        if cfg.in_flight < 1:
+            raise ValueError(f"in_flight must be at least 1, got {cfg.in_flight}")
         return cfg
 
 
@@ -63,9 +66,13 @@ def _blend(old: Command, new: Command, w: float) -> Command:
 
 
 class ChunkQueue:
+    """Rows stamped with absolute ticks. A new chunk supersedes only the future it
+    covers (``tick >= obs_tick``); rows before that stay queued, so pipelined chunks
+    merge instead of cannibalizing each other's unexecuted rows."""
+
     def __init__(self, blend_steps: int = 0) -> None:
         self.blend_steps = blend_steps
-        self._rows: collections.deque[Command] = collections.deque()
+        self._rows: collections.deque[tuple[int, Command]] = collections.deque()
 
     def __len__(self) -> int:
         return len(self._rows)
@@ -74,18 +81,22 @@ class ChunkQueue:
         self._rows.clear()
 
     def install(self, chunk: list[Command], obs_tick: int, now_tick: int) -> int:
-        """Replace the queue with ``chunk`` aligned to ``now_tick``; returns rows dropped."""
-        dropped = max(0, now_tick - obs_tick)
-        rows = list(chunk[dropped:])
-        old = list(self._rows)
-        for i in range(min(self.blend_steps, len(old), len(rows))):
-            if old[i].mode == rows[i].mode:
-                rows[i] = _blend(old[i], rows[i], (i + 1) / (self.blend_steps + 1))
-        self._rows = collections.deque(rows)
-        return min(dropped, len(chunk))
+        """Merge ``chunk`` (row ``i`` is the target for ``obs_tick + i``); returns rows dropped as elapsed."""
+        elapsed = max(0, min(now_tick - obs_tick, len(chunk)))
+        fresh = [(obs_tick + i, cmd) for i, cmd in enumerate(chunk)][elapsed:]
+        kept = [row for row in self._rows if row[0] < obs_tick]  # earlier future this chunk does not cover
+        for i in range(min(self.blend_steps, len(kept), len(fresh))):
+            k, old = kept[-self.blend_steps + i]
+            tick, new = fresh[i]
+            if old.mode == new.mode:
+                fresh[i] = (tick, _blend(old, new, (i + 1) / (self.blend_steps + 1)))
+        self._rows = collections.deque(kept + fresh)
+        return elapsed
 
-    def pop(self) -> Command | None:
-        return self._rows.popleft() if self._rows else None
+    def pop(self, at_tick: int) -> Command | None:
+        if self._rows and self._rows[0][0] <= at_tick:
+            return self._rows.popleft()[1]
+        return None
 
 
 @dataclass
@@ -156,17 +167,19 @@ class ControlLoop:
         period = 1.0 / self.control_hz
         self.queue.clear()
         self.safety.reset()
-        pending: dict = {}
-        thread: threading.Thread | None = None
+        inflight: list[dict] = []  # {"tick", "thread", "out"} in fire order
+        done: list[dict] = []
         last_command_at = time.monotonic()
         primed = False
+        last_fire = -(1 << 30)
+        fire_spacing = 1  # ticks between fires; learned from RTT so chunk coverage stays contiguous
 
-        def fetch(obs: dict, obs_tick: int) -> None:
+        def fetch(obs: dict, obs_tick: int, out: dict) -> None:
             try:
                 reply = self.client.request(obs)
-                pending.update(reply=reply, obs_tick=obs_tick, rtt=self.client.last_rtt_ms)
+                out.update(reply=reply, rtt=self.client.last_rtt_ms)
             except BaseException as exc:  # handled on the control thread
-                pending.update(error=exc)
+                out.update(error=exc)
 
         try:
             for tick in range(max_steps):
@@ -176,7 +189,16 @@ class ControlLoop:
                 tick_start = time.monotonic()
                 state = self.driver.read_state()
                 self.safety.check_state(state)
-                if thread is None and len(self.queue) <= self.cfg.prefetch_threshold:
+                # At most one new request per tick keeps observations distinct; with
+                # in_flight > 1 several are pipelined and installed in observation
+                # order below, so the queue never rewinds to an older plan. The
+                # spacing staggers fires so each chunk's surviving coverage
+                # (horizon - RTT rows) abuts the previous instead of clumping.
+                if (
+                    tick - last_fire >= fire_spacing
+                    and len(inflight) < self.cfg.in_flight
+                    and len(self.queue) <= self.cfg.prefetch_threshold
+                ):
                     self._seq += 1
                     obs = self.adapter.build_obs(
                         state,
@@ -186,28 +208,50 @@ class ControlLoop:
                         episode_id=stats.episode_id,
                         jpeg_quality=self.cfg.jpeg_quality,
                     )
-                    thread = threading.Thread(target=fetch, args=(obs, tick), daemon=True)
+                    out: dict = {}
+                    thread = threading.Thread(target=fetch, args=(obs, tick, out), daemon=True)
+                    inflight.append({"tick": tick, "thread": thread, "out": out})
                     thread.start()
-                if thread is not None and (not thread.is_alive() or (not primed and not len(self.queue))):
-                    thread.join()  # the first chunk of an episode is waited for
-                    thread = None
-                    if "error" in pending:
-                        raise pending["error"]
-                    reply = pending.pop("reply")
+                    last_fire = tick
+                if not primed and not len(self.queue) and inflight:
+                    inflight[0]["thread"].join()  # the first chunk of an episode is waited for
+                still: list[dict] = []
+                for entry in inflight:
+                    if entry["thread"].is_alive():
+                        still.append(entry)
+                    else:
+                        entry["thread"].join()
+                        done.append(entry)
+                inflight = still
+                gateway_stop = False
+                for entry in sorted(done, key=lambda e: e["tick"]):
+                    out = entry["out"]
+                    if "error" in out:
+                        raise out["error"]
+                    reply = out["reply"]
                     if reply.get("type") == "stop":
                         stats.stopped = f"gateway stop: {reply.get('reason', '')}"
+                        gateway_stop = True
                         break
                     stats.inferences += 1
-                    stats.rtt_ms.append(pending.pop("rtt"))
+                    stats.rtt_ms.append(out["rtt"])
                     if reply.get("server_ms") is not None:
                         stats.server_ms.append(float(reply["server_ms"]))
                     chunk = self.adapter.to_commands(reply)
                     if self.cfg.execute_steps:
                         chunk = chunk[: self.cfg.execute_steps]
-                    now_tick = tick if primed else pending["obs_tick"]
-                    stats.dropped_rows += self.queue.install(chunk, pending.pop("obs_tick"), now_tick)
+                    # A chunk spends rtt ticks in flight and its elapsed rows are dropped,
+                    # so spacing fires one tick tighter than the surviving span keeps
+                    # coverage contiguous with a small buffer for RTT jitter.
+                    fresh_span = len(chunk) - int(out["rtt"] * self.control_hz / 1e3)
+                    fire_spacing = max(1, fresh_span - 1)
+                    now_tick = tick if primed else entry["tick"]
+                    stats.dropped_rows += self.queue.install(chunk, entry["tick"], now_tick)
                     primed = True
-                cmd = self.queue.pop()
+                done = []
+                if gateway_stop:
+                    break
+                cmd = self.queue.pop(tick)
                 if cmd is None:
                     stats.underruns += 1
                     if (time.monotonic() - last_command_at) * 1e3 > self.safety.cfg.stale_ms:
@@ -232,12 +276,10 @@ class ControlLoop:
         except BaseException as exc:
             stats.stopped = f"{type(exc).__name__}: {exc}"
             self.driver.hold()
-            if thread is not None:
-                thread.join(timeout=self.client.request_timeout_s)
             raise
         finally:
-            if thread is not None:
-                thread.join(timeout=self.client.request_timeout_s)
+            for entry in inflight:
+                entry["thread"].join(timeout=self.client.request_timeout_s)
         if stats.stopped:
             self.driver.hold()
             self.log(f"episode stopped: {stats.stopped}")

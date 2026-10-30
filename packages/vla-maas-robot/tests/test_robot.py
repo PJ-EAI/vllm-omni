@@ -181,13 +181,24 @@ def test_safety_workspace():
 def test_chunk_queue_alignment_and_blend():
     q = ChunkQueue()
     chunk = [_cmd([i]) for i in range(10)]
-    assert q.install(chunk, obs_tick=3, now_tick=7) == 4
-    assert q.pop().target[0] == 4
+    assert q.install(chunk, obs_tick=3, now_tick=7) == 4  # 4 rows elapsed in flight
+    assert q.pop(7).target[0] == 4  # first future row lands on the current tick
+    assert q.pop(7) is None  # the next row is not due yet
     blended = ChunkQueue(blend_steps=1)
     blended.install([_cmd([0.0])] * 5, 0, 0)
-    blended.install([_cmd([1.0])] * 5, 0, 0)
-    assert blended.pop().target[0] == pytest.approx(0.5)
-    assert blended.pop().target[0] == pytest.approx(1.0)
+    blended.install([_cmd([1.0])] * 5, 2, 2)  # supersedes ticks >= 2; seam blends with tick 1
+    assert blended.pop(0).target[0] == 0.0
+    assert blended.pop(1).target[0] == 0.0
+    assert blended.pop(2).target[0] == pytest.approx(0.5)  # half old plan, half new
+    assert blended.pop(3).target[0] == 1.0
+
+
+def test_chunk_queue_merges_pipelined_chunks_instead_of_replacing():
+    q = ChunkQueue()
+    q.install([_cmd([1.0])] * 10, 0, 0)  # covers ticks 0..9
+    q.install([_cmd([2.0])] * 10, 4, 4)  # newer plan covers ticks 4..13; ticks 0..3 must survive
+    assert len(q) == 14
+    assert [q.pop(t).target[0] for t in range(6)] == [1.0, 1.0, 1.0, 1.0, 2.0, 2.0]
 
 
 def test_config_and_factories(tmp_path):
@@ -274,3 +285,24 @@ def test_loop_operator_stop():
         assert loop.run_episode("go", max_steps=100, stop=stop).stopped == "operator"
     finally:
         cam.stop()
+
+
+def test_loop_config_validates_in_flight():
+    with pytest.raises(ValueError, match="in_flight"):
+        LoopConfig.from_dict({"in_flight": 0})
+
+
+def test_loop_pipelines_in_flight_requests_to_outpace_latency():
+    """100 Hz loop, horizon 10, 60 ms RTT = 6 ticks: one request in flight starves; three do not."""
+    server = _server(horizon=10, hz=100.0)
+    serial = _loop(FakeClient(server, latency_s=0.06), prefetch_threshold=8)
+    piped = _loop(FakeClient(server, latency_s=0.06), prefetch_threshold=8, in_flight=3)
+    try:
+        serial_stats = serial[0].run_episode("go", 60)
+        assert serial_stats.underruns > 5  # single-flight supply ~4 rows per ~6 ticks < 1 row/tick
+        piped_stats = piped[0].run_episode("go", 60)
+        assert piped_stats.underruns == 0
+        assert piped_stats.commands_sent == 60
+    finally:
+        serial[2].stop()
+        piped[2].stop()
