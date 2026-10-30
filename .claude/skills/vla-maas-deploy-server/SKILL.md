@@ -1,6 +1,6 @@
 ---
 name: vla-maas-deploy-server
-description: Deploy the VLA MaaS server side on a GPU cluster for real robots on another network - start π0.5 backends (one per GPU), generate the gateway config with per-robot keys and a Piper adapter, run the gateway behind a TLS proxy on 443, and verify the public path. Use when setting up or changing the cluster/gateway that serves remote arms; use vla-maas-deploy-robot for the arm PCs.
+description: Deploy the VLA MaaS server side on a GPU cluster for real robots on another network - start π0.5 backends (one per GPU), generate the gateway config with per-robot keys and a Piper adapter, run the gateway behind a TLS proxy on 443, verify the public path, and swap a route's checkpoint or model type live. Use when setting up or changing the cluster/gateway that serves remote arms; use vla-maas-deploy-robot for the arm PCs.
 ---
 
 # Deploy the VLA MaaS server (cluster + gateway + public entry)
@@ -144,11 +144,41 @@ CKPT=<ckpt> DEPLOY=$PWD/deploy-pi05.yaml GPUS="0 1 2 3 4 5 6 7" HOST=127.0.0.1 A
   once a second, so plan roughly 1 backend per 3 arms. This is an estimate:
   confirm it with the robots' `rtt_p50` / `underruns`.
 - **Add a robot:** re-run `render_gateway.py` with the longer `--robots` list,
-  then restart the gateway (sessions reconnect).
+  then `kill -HUP $(cat maas-gateway/gateway.pid)`; keys and robots reload
+  without dropping sessions.
+- **Swap the checkpoint or model type live** (to compare checkpoints or chase a
+  regression): blue/green onto spare GPUs, old robots finish their session on
+  the old revision, new ones get the new one:
+
+  ```bash
+  source deploy/keys/operator.env
+  python3 .claude/skills/vla-maas-deploy-server/scripts/swap_model.py --config deploy/gateway.yaml \
+      --model pi05_piper --checkpoint <new ckpt> --gpus "4 5 6 7" --base-port 8101
+  # another VLA: add --model-type <type> --deploy <its deploy yaml> --adapter-file <adapter block yaml>
+  # no spare GPUs: --stop-old-first (the route answers 503 while the new servers load)
+  # cut over now: --cutover stop (robots on the old revision get stop at their next observation)
+  ```
+
+  The gateway probes the new backends and rejects the swap, changing nothing,
+  if a handshake fails, the adapter rejects it, or a backend reports another
+  checkpoint or model type than the labels; the script then restores the YAML
+  and stops what it started. A new checkpoint is a new policy: drop the arms
+  back to `dry_run` until it has been checked (lessons L002).
+- **Track a problem:** `maas-gateway/gateway.jsonl` has one JSON event per line,
+  tagged with `session`, `robot`, `model`, `revision`, `checkpoint`,
+  `model_type` and `backend`. `robotctl` prints the session id and revision
+  when it connects. For example
+  `jq -c 'select(.robot == "piper-01" and .level != "INFO")' maas-gateway/gateway.jsonl`,
+  `jq -c 'select(.event | startswith("route."))' maas-gateway/gateway.jsonl` for
+  the swap history, or `GET /v1/admin/revisions`. The backend's own log names
+  requests `robot-<session>-<n>` for adapters that send the session id.
 - **Stop everything:** `kill $(cat maas-gateway/gateway.pid maas-backends/*.pid)`.
 
 ## Known limits
 
+- Swaps change what new sessions get; a running session never changes model
+  mid-episode. In-process weight reload inside one vllm-omni server is not
+  used: a model type change needs a new process anyway.
 - One gateway process with no health-checked failover. When a backend dies,
   its sessions drop and are routed elsewhere when they reconnect.
 - No tenants or quotas. Keys are the only access control.

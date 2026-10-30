@@ -100,6 +100,8 @@ def main(argv: list[str] | None = None) -> int:
         "--denoise-steps", type=int, default=0, help="override num_inference_steps per request; 0 = server default"
     )
     p.add_argument("--request-timeout-s", type=float, default=5.0)
+    p.add_argument("--checkpoint", help="label of the checkpoint the backends serve; checked against what they report")
+    p.add_argument("--model-type", help="label of the model type, e.g. pi05; checked against the backend's pipeline")
     args = p.parse_args(argv)
     if not [e for e in args.embodiments.split(",") if e.strip()]:
         p.error("--embodiments must list at least one embodiment; an empty list would allow every robot")
@@ -117,7 +119,14 @@ def main(argv: list[str] | None = None) -> int:
     config = {
         "api_keys": [operator],
         "request_timeout_s": args.request_timeout_s,
-        "models": {args.model: {"backends": backends, "adapter": piper_adapter(args)}},
+        "models": {
+            args.model: {
+                **({"checkpoint": args.checkpoint} if args.checkpoint else {}),
+                **({"model_type": args.model_type} if args.model_type else {}),
+                "backends": backends,
+                "adapter": piper_adapter(args),
+            }
+        },
         "robots": {
             rid: {"api_key": _key(out / "keys" / f"{rid}.env", "VLA_MAAS_API_KEY"), "models": [args.model]}
             for rid in robots
