@@ -86,8 +86,8 @@ def test_registry_and_example_config(sdk):
     assert isinstance(make_driver(cfg.driver), ArxDriver)
     driver = make_driver(cfg.driver)
     assert driver.spec.embodiment == "arx" and driver.spec.dof == 6
-    assert driver.spec.modes == ("joint_pos",) and driver.spec.gripper_range == (0.0, 1.0)
-    assert cfg.calibration.gripper_raw_range == (0.0, 1.0)
+    assert driver.spec.modes == ("joint_pos",) and driver.spec.gripper_range == (0.0, 3.449)
+    assert cfg.calibration.gripper_raw_range == (0.0, 3.449)
 
 
 def test_connect_passes_config_and_missing_sdk(sdk, monkeypatch):
