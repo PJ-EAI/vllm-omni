@@ -121,6 +121,21 @@ def test_policy_server_config_reads_diffusion_model_config():
     assert serving.policy_server_config.to_dict() == policy_config
 
 
+def test_server_info_reports_checkpoint_and_model_class():
+    od_config = SimpleNamespace(model_config={"policy_server_config": {}}, model_class_name="Pi05Pipeline")
+    engine_client = SimpleNamespace(get_diffusion_od_config=lambda: od_config)
+
+    serving = openpi_serving.ServingRealtimeRobotOpenPI(
+        engine_client=engine_client, model_name="pi05", checkpoint="/ckpt/pi05-piper/step-20000"
+    )
+
+    assert serving.server_info["checkpoint"] == "/ckpt/pi05-piper/step-20000"
+    assert serving.server_info["served_model_name"] == "pi05"
+    assert serving.server_info["model_type"] == "Pi05Pipeline"
+    # The policy handshake config itself is unchanged; the connection adds ``server`` beside it.
+    assert serving.policy_server_config.to_dict() == {}
+
+
 def test_policy_server_config_reads_stage_config_model_config():
     policy_config = {"custom_model_key": "from-stage-config"}
     engine_client = SimpleNamespace(

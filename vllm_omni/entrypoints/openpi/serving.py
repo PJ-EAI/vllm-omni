@@ -9,6 +9,7 @@ The loaded policy model owns dataset transforms inside its pipeline.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import count
@@ -71,10 +72,19 @@ class ServingRealtimeRobotOpenPI:
         self,
         engine_client: Any,
         model_name: str | None = None,
+        checkpoint: str | None = None,
     ) -> None:
         self.engine_client = engine_client
         self.model_name = model_name
         self.policy_server_config = self._get_policy_server_config(engine_client)
+        # Sent as ``server`` in the handshake so a gateway can check what this
+        # process serves before routing to it, and tag its logs with it.
+        self.server_info = {
+            "checkpoint": checkpoint or model_name,
+            "served_model_name": model_name,
+            "model_type": self._get_model_class_name(engine_client),
+            "started_at": time.time(),
+        }
         self._request_counter = count()
 
     @classmethod
@@ -82,9 +92,10 @@ class ServingRealtimeRobotOpenPI:
         cls,
         engine_client: Any,
         model_name: str | None = None,
+        checkpoint: str | None = None,
     ) -> ServingRealtimeRobotOpenPI | None:
         try:
-            return cls(engine_client=engine_client, model_name=model_name)
+            return cls(engine_client=engine_client, model_name=model_name, checkpoint=checkpoint)
         except ValueError as exc:
             if "policy_server_config" not in str(exc):
                 raise
@@ -123,6 +134,24 @@ class ServingRealtimeRobotOpenPI:
         if model_config is None:
             model_config = getattr(engine_client, "model_config", None)
         return PolicyServerConfig.from_model_config(model_config)
+
+    @staticmethod
+    def _get_model_class_name(engine_client: Any) -> str | None:
+        """Best-effort pipeline class name (e.g. ``Pi05Pipeline``); None when the head cannot see it."""
+        get_od_config = getattr(engine_client, "get_diffusion_od_config", None)
+        configs = [get_od_config()] if callable(get_od_config) else []
+        configs.append(getattr(engine_client, "od_config", None))
+        for stage_config in getattr(engine_client, "stage_configs", []) or []:
+            if getattr(stage_config, "stage_type", None) == "diffusion":
+                configs += [getattr(stage_config, "diffusion_config", None), getattr(stage_config, "engine_args", None)]
+        for config in configs:
+            if isinstance(config, Mapping):
+                name = config.get("model_class_name")
+            else:
+                name = getattr(config, "model_class_name", None)
+            if isinstance(name, str) and name:
+                return name
+        return None
 
     def reset(self, obs: dict) -> None:
         """Compatibility hook; per-connection state lives in RobotRealtimeConnection."""

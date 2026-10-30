@@ -65,6 +65,8 @@ class MockPolicy:
             "max_action_dim": args.max_action_dim,
             "max_cameras": 2,
             "mock": True,
+            # What a vllm-omni backend reports too; the gateway checks it against the route's labels.
+            "server": {"checkpoint": args.checkpoint, "model_type": args.model_type},
         }
 
     def infer(self, obs: dict) -> np.ndarray:
@@ -193,6 +195,8 @@ def main() -> int:
         help="Delta-action amplitude of a slow sweep returned for non-mock scenes (robosuite/LIBERO); 0 = hold still.",
     )
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--checkpoint", default="mock", help="Checkpoint name reported in the handshake.")
+    parser.add_argument("--model-type", default="mock", help="Model type reported in the handshake.")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     policy = MockPolicy(args)

@@ -981,6 +981,7 @@ async def omni_init_app_state(
         state.openai_serving_realtime_robot = ServingRealtimeRobotOpenPI.create_policy_server(
             engine_client=engine_client,
             model_name=model_name,
+            checkpoint=args.model,
         )
         if state.openai_serving_realtime_robot is not None:
             state.rl_rollout_serving = ServingRLRollout(state.openai_serving_realtime_robot)
