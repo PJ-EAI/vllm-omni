@@ -15,10 +15,12 @@ Joint-space (Piper) checkpoint:
         --backends ws://gpu-1:8001/v1/realtime/robot/openpi,ws://gpu-1:8002/v1/realtime/robot/openpi \
         --robots piper-01,piper-02 --state-dim 32 --control-hz 30
 
-Cartesian delta-pose checkpoint (ARX X5; 6D delta EEF pose + absolute gripper):
+Cartesian delta-pose checkpoint (ARX X5; 6D delta EEF pose + absolute gripper,
+each row relative to the previous one, offsets in the end-effector frame):
 
     python3 render_gateway.py --out deploy/ --model pi05 --action-space eef_pose \
         --rotation axis_angle --gripper-range 0 3.449 --embodiments arx \
+        --delta-ref previous_row --delta-frame tool \
         --backends ws://127.0.0.1:8001/v1/realtime/robot/openpi \
         --robots arx-01 --state-dim 32 --control-hz 30
 """
@@ -67,13 +69,18 @@ def model_adapter(args: argparse.Namespace) -> dict:
     ``--action-space eef_pose``: 6D pose + gripper, for Cartesian delta-pose
     checkpoints (``*_deltapose_*``). The pose columns are deltas from the
     observed pose and the gripper column is absolute; the gateway composes the
-    deltas into absolute targets (``delta * observed``) before the robot sees
-    them, so the robot client only ever receives absolute targets.
+    deltas into absolute targets before the robot sees them, so the robot client
+    only ever receives absolute targets. ``--delta-ref`` says whether each row is
+    relative to the observation or to the previous row, ``--delta-frame``
+    whether the offsets are in the base frame or the end-effector (tool) frame.
     """
     gripper = {"field": "gripper", "range": args.gripper_range}
     if args.action_space == "eef_pose":
         state = [{"field": "eef_pose", "rotation": args.rotation}, gripper]
-        layout = [{"field": "eef_pose", "mode": args.eef_mode, "rotation": args.rotation}, gripper]
+        pose = {"field": "eef_pose", "mode": args.eef_mode, "rotation": args.rotation}
+        if args.eef_mode == "delta":
+            pose.update(delta_ref=args.delta_ref, rotation_compose=args.delta_frame, translation_frame=args.delta_frame)
+        layout = [pose, gripper]
     else:
         state = ["joint_pos", gripper]
         layout = ["joint_pos", gripper]
@@ -117,6 +124,18 @@ def main(argv: list[str] | None = None) -> int:
         choices=("delta", "absolute"),
         default="delta",
         help="eef_pose only: model columns are deltas from the observed pose (default) or absolute targets",
+    )
+    p.add_argument(
+        "--delta-ref",
+        choices=("observation", "previous_row"),
+        default="observation",
+        help="eef_pose delta only: each row is relative to the observed pose (default) or to the previous row",
+    )
+    p.add_argument(
+        "--delta-frame",
+        choices=("base", "tool"),
+        default="base",
+        help="eef_pose delta only: position and rotation offsets in the robot base frame (default) or the tool frame",
     )
     p.add_argument(
         "--rotation",

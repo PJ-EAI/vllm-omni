@@ -31,9 +31,17 @@ gateway YAML::
 Segments: ``field`` is a protocol field. ``range: [closed, open]`` maps the
 protocol gripper's ``[0, 1]`` onto the model's scale. ``eef_pose`` segments
 take ``rotation: quat | axis_angle | rpy`` (default ``quat``). ``mode: delta``
-means the model predicts ``target - observed state`` (OpenPI's relative-action
-convention: every row is relative to the observation, rotations composed as
-``delta * observed``); the adapter returns absolute targets.
+means the model predicts offsets; the adapter returns absolute targets. By
+default every row is relative to the observed state and rotations compose as
+``delta * observed`` (OpenPI's relative-action convention). Delta segments can
+change that:
+
+- ``delta_ref: previous_row`` -- row ``i`` is relative to row ``i - 1``'s target
+  (row 0 to the observation), so the chunk is accumulated step by step.
+- ``rotation_compose: tool`` (eef_pose) -- the rotation offset is in the end
+  effector frame: ``observed * delta`` instead of ``delta * observed``.
+- ``translation_frame: tool`` (eef_pose) -- the position offset is in the end
+  effector frame and is rotated by the reference orientation before adding.
 
 Models with other native shapes (dict outputs, extra session state) subclass
 ``ModelAdapter`` and register a ``kind`` in ``ADAPTERS``.
@@ -64,6 +72,9 @@ class Segment:
     mode: str = "absolute"  # absolute | delta
     rotation: str = "quat"  # eef_pose only
     range: tuple[float, float] | None = None  # gripper only: native value at closed, at open
+    delta_ref: str = "observation"  # delta only: observation | previous_row
+    rotation_compose: str = "base"  # eef_pose delta only: base (delta * ref) | tool (ref * delta)
+    translation_frame: str = "base"  # eef_pose delta only: base | tool (rotated by the reference orientation)
 
     @classmethod
     def parse(cls, spec: Any) -> Segment:
@@ -75,6 +86,13 @@ class Segment:
             raise ValueError(f"segment mode must be absolute or delta, got {seg.mode!r}")
         if seg.rotation not in geo.ROTATIONS:
             raise ValueError(f"rotation must be one of {sorted(geo.ROTATIONS)}, got {seg.rotation!r}")
+        if seg.delta_ref not in ("observation", "previous_row"):
+            raise ValueError(f"delta_ref must be observation or previous_row, got {seg.delta_ref!r}")
+        for key in ("rotation_compose", "translation_frame"):
+            if getattr(seg, key) not in ("base", "tool"):
+                raise ValueError(f"{key} must be base or tool, got {getattr(seg, key)!r}")
+        if seg.field != "eef_pose" and (seg.rotation_compose, seg.translation_frame) != ("base", "base"):
+            raise ValueError(f"rotation_compose / translation_frame apply to eef_pose, not {seg.field!r}")
         if seg.range is not None:
             seg.range = (float(seg.range[0]), float(seg.range[1]))
         return seg
@@ -234,9 +252,11 @@ class GenericAdapter(ModelAdapter):
             pos, rot = cols[:, :3], geo.quat_from(seg.rotation, cols[:, 3:])
             if seg.mode == "delta":
                 cur = np.asarray(obs["state"]["eef_pose"], dtype=np.float64)
-                pos, rot = pos + cur[:3], geo.quat_mul(rot, cur[3:7])
+                return _compose_eef(seg, pos, rot, cur[:3], geo.quat_normalize(cur[3:7]))
             return np.concatenate((pos, geo.quat_normalize(rot)), axis=1)
         if seg.mode == "delta":
+            if seg.delta_ref == "previous_row":
+                cols = np.cumsum(cols, axis=0)
             return cols + np.asarray(obs["state"][seg.field], dtype=np.float64)
         return cols
 
@@ -257,6 +277,19 @@ class GenericAdapter(ModelAdapter):
             out[seg.field] = self._absolute(seg, chunk[:, col : col + width], obs).astype(np.float32)
             col += width
         return out
+
+
+def _compose_eef(seg: Segment, dpos: np.ndarray, drot: np.ndarray, pos0: np.ndarray, rot0: np.ndarray) -> np.ndarray:
+    """Absolute ``[rows, 7]`` targets from per-row pose offsets against the reference pose ``(pos0, rot0)``."""
+    out = np.empty((len(dpos), 7))
+    ref_pos, ref_rot = pos0, rot0
+    for i, (dp, dq) in enumerate(zip(dpos, drot)):
+        step = geo.quat_rotate(ref_rot, dp) if seg.translation_frame == "tool" else dp
+        rot = geo.quat_mul(ref_rot, dq) if seg.rotation_compose == "tool" else geo.quat_mul(dq, ref_rot)
+        out[i, :3], out[i, 3:] = ref_pos + step, geo.quat_normalize(rot)
+        if seg.delta_ref == "previous_row":
+            ref_pos, ref_rot = out[i, :3], out[i, 3:]
+    return out
 
 
 ADAPTERS: dict[str, type[GenericAdapter]] = {"generic": GenericAdapter}
