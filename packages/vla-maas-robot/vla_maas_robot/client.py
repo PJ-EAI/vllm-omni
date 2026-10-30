@@ -48,6 +48,7 @@ class PolicyClient:
         self._stack = ExitStack()
         self.server: ServerHello | None = None
         self.session_id: str | None = None
+        self.ready: dict = {}  # the gateway's ready reply: session_id, and revision / checkpoint / model_type if sent
         self.last_rtt_ms: float | None = None
         self.last_server_ms: float | None = None
 
@@ -71,6 +72,7 @@ class PolicyClient:
         if reply.get("type") != "ready":
             raise ValueError(f"expected 'ready', got {reply.get('type')!r}")
         self.session_id = reply.get("session_id")
+        self.ready = reply
         return self.server
 
     def _recv(self) -> dict:

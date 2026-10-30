@@ -36,7 +36,27 @@ mock in `examples/online_serving/vla_maas/mock_policy_server.py`) and adds:
   one session; a `snapshot` arrives every second. Images are JPEG-encoded off the
   event loop and only for watched sessions; see `monitor.py` for the messages.
 - **Metrics**: `GET /metrics` returns per-model request/error counts, active
-  sessions and relay p50/p99. `GET /v1/models` lists models, `GET /healthz` is open.
+  sessions and relay p50/p99. `GET /v1/models` lists models with their current
+  revision, checkpoint and model type; `GET /healthz` is open.
+- **Live checkpoint / model-type swap**: edit a model's `backends`,
+  `checkpoint`, `model_type` or `adapter` in the YAML, then
+  `GET /v1/admin/reload` (operator key) or `kill -HUP` the gateway. It probes the
+  new backends first (handshake, adapter, and the checkpoint / model type they
+  report against the labels) and changes nothing on any problem. New sessions
+  go to the new revision; open sessions finish on the old one (`draining`), or
+  get `stop` with `?cutover=stop`. `backends: []` pauses a model (503).
+  `GET /v1/admin/revisions` shows each model's revision and the recent swaps.
+  [`swap_model.py`](../../.claude/skills/vla-maas-deploy-server/scripts/swap_model.py)
+  does the whole blue/green swap: start, reload, drain, stop the old servers.
+- **Structured logs**: one event per line (`session.open`, `session.ready`,
+  `act.request`, `act.error`, `session.close`, `route.revision`,
+  `backend.draining`, `backend.drained`, ...), each tagged with the session,
+  robot, model, revision, checkpoint, model type and backend that served it.
+  `--log-file logs/gateway.jsonl` writes them as JSON lines; settings are under
+  `logging:` (`maas_log.py`). The robot prints the same session id and revision
+  when it connects, so `jq 'select(.session == "<id>")' logs/gateway.jsonl`
+  shows everything that robot saw; vllm-omni request ids are
+  `robot-<session id>-<n>` when the adapter sends the session id.
 
 Errors: 401 for a missing or wrong key, 404 for an unknown model, websocket close
 1011 when a backend is unreachable, and an OpenPI `{"type": "error"}` reply when a

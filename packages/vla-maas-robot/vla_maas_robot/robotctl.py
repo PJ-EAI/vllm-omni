@@ -77,6 +77,7 @@ def cmd_check(cfg: RobotConfig, _: argparse.Namespace) -> int:
             return 2
         s = client.server
         print(f"gateway ok: model={s.model} protocol={s.protocol} session={client.session_id}")
+        print(f"  serving revision={client.ready.get('revision')} checkpoint={client.ready.get('checkpoint')}")
         print(f"  requires images={s.requires.images} state={s.requires.state}")
         print(f"  provides space={s.provides.space} horizon={s.provides.horizon} control_hz={s.provides.control_hz}")
     return 0
@@ -109,7 +110,10 @@ def cmd_run(cfg: RobotConfig, args: argparse.Namespace) -> int:
         safety = SafetyFilter(driver.spec, cfg.safety, loop_hz)
         safety.mode = mode
         loop = ControlLoop(driver, cameras, adapter, safety, client, cfg.control)
-        print(f"{cfg.robot_id} -> {client.server.model} at {loop.control_hz:g} Hz, mode={mode}")
+        print(
+            f"{cfg.robot_id} -> {client.server.model} at {loop.control_hz:g} Hz, mode={mode}, "
+            f"session={client.session_id} revision={client.ready.get('revision')}"
+        )
         for episode in range(args.episodes):
             if stop.is_set():
                 break
@@ -121,6 +125,9 @@ def cmd_run(cfg: RobotConfig, args: argparse.Namespace) -> int:
             line = {
                 "robot_id": cfg.robot_id,
                 "model": client.server.model,
+                "session_id": client.session_id,
+                "revision": client.ready.get("revision"),
+                "checkpoint": client.ready.get("checkpoint"),
                 "mode": mode,
                 "episode": episode,
                 "success": success,
