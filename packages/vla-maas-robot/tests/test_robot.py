@@ -218,6 +218,8 @@ def test_config_and_factories(tmp_path):
 class FakeClient:
     """Replies with absolute joint chunks after ``latency_s``; ``stop_after`` replies stop."""
 
+    supports_pipelining = True  # serves concurrent request() calls, unlike the real PolicyClient
+
     def __init__(self, server: ServerHello, latency_s: float = 0.0, stop_after: int | None = None) -> None:
         self.server, self.latency_s, self.stop_after = server, latency_s, stop_after
         self.request_timeout_s, self.last_rtt_ms, self.requests = 5.0, None, []
@@ -306,3 +308,14 @@ def test_loop_pipelines_in_flight_requests_to_outpace_latency():
     finally:
         serial[2].stop()
         piped[2].stop()
+
+
+def test_loop_clamps_in_flight_for_serial_clients():
+    class Serial(FakeClient):
+        supports_pipelining = False
+
+    loop, _, cam = _loop(Serial(_server()), in_flight=3)
+    try:
+        assert loop.in_flight == 1
+    finally:
+        cam.stop()

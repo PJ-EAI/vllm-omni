@@ -154,6 +154,13 @@ class ControlLoop:
         self.control_hz = cfg.control_hz or (provides.control_hz if provides else 10.0)
         self.queue = ChunkQueue(cfg.blend_steps if cfg.blend == "linear" else 0)
         self._seq = 0
+        # The standard /act session is one websocket in strict request/response: the
+        # gateway answers one observation at a time, so concurrent requests only race
+        # on the socket. Pipelining needs a client that says it can serve them.
+        self.in_flight = cfg.in_flight
+        if self.in_flight > 1 and not getattr(client, "supports_pipelining", False):
+            self.log("in_flight > 1 needs a pipelining client; clamping to 1")
+            self.in_flight = 1
 
     def _frames(self, stats: EpisodeStats, state_t: float) -> dict:
         frames = {role: cam.read() for role, cam in self.cameras.items()}
@@ -196,7 +203,7 @@ class ControlLoop:
                 # (horizon - RTT rows) abuts the previous instead of clumping.
                 if (
                     tick - last_fire >= fire_spacing
-                    and len(inflight) < self.cfg.in_flight
+                    and len(inflight) < self.in_flight
                     and len(self.queue) <= self.cfg.prefetch_threshold
                 ):
                     self._seq += 1
