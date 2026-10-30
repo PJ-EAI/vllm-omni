@@ -4,7 +4,8 @@
 """WebSocket connection for robot policy inference (OpenPI protocol).
 
 Protocol (compatible with OpenPI policy clients):
-    Connect  -> server sends msgpack(PolicyServerConfig fields)
+    Connect  -> server sends msgpack(PolicyServerConfig fields + ``server``:
+                checkpoint, served_model_name, model_type, started_at)
     Infer    -> client sends msgpack(obs), server sends msgpack(ndarray)
     Reset    -> client sends msgpack({endpoint:reset}), server sends msgpack(status)
 
@@ -220,6 +221,9 @@ class RobotRealtimeConnection:
             # Send model-specific PolicyServerConfig resolved by serving from
             # diffusion od_config.model_config.
             metadata = self.serving.policy_server_config.to_dict()
+            server_info = getattr(self.serving, "server_info", None)
+            if isinstance(server_info, dict) and "server" not in metadata:
+                metadata["server"] = server_info
             await self.websocket.send_bytes(_pack(metadata))
 
             while True:

@@ -68,15 +68,28 @@ def _fps(value: Any) -> float:
         return DEFAULT_FPS
 
 
-@dataclass
+@dataclass(eq=False)
 class Backend:
     url: str
     active: int = 0
     requests: int = 0
     errors: int = 0
+    revision: str | None = None  # the route revision this backend serves (routes.py)
+    checkpoint: str | None = None
+    model_type: str | None = None
+    draining: bool = False  # replaced by a newer revision; keeps its open sessions, gets no new ones
 
     def snapshot(self) -> dict:
-        return {"url": self.url, "active": self.active, "requests": self.requests, "errors": self.errors}
+        return {
+            "url": self.url,
+            "active": self.active,
+            "requests": self.requests,
+            "errors": self.errors,
+            "revision": self.revision,
+            "checkpoint": self.checkpoint,
+            "model_type": self.model_type,
+            "state": "draining" if self.draining else "active",
+        }
 
 
 @dataclass
@@ -224,6 +237,8 @@ class SessionView:
             "model": self.model,
             "embodiment": self.embodiment,
             "backend": self.backend.url,
+            "revision": self.backend.revision,
+            "checkpoint": self.backend.checkpoint,
             "session_id": self.session_id,
             "connected_s": round(time.time() - self.connected_at, 1),
             "requests": self.requests,
@@ -242,6 +257,8 @@ class SessionView:
             "model": self.model,
             "embodiment": self.embodiment,
             "backend": self.backend.url,
+            "revision": self.backend.revision,
+            "checkpoint": self.backend.checkpoint,
             "peer": self.peer,
             "status": self.status(),
             "connected_s": round((self.closed_at or now) - self.connected_at, 1),
@@ -405,7 +422,7 @@ class Monitor:
             "models": {
                 model: {
                     **stats.snapshot(),
-                    "backends": [b.snapshot() for b in self.models[model]],
+                    "backends": [b.snapshot() for b in self.models.get(model, [])],
                     "series": stats.history(since),
                 }
                 for model, stats in self.stats.items()
