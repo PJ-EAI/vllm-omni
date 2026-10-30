@@ -319,3 +319,17 @@ def test_loop_clamps_in_flight_for_serial_clients():
         assert loop.in_flight == 1
     finally:
         cam.stop()
+
+
+def test_loop_smoothing_eases_toward_the_target():
+    client = FakeClient(_server(horizon=10, hz=50.0))
+    loop, driver, cam = _loop(client, smoothing=0.5, prefetch_threshold=8)
+    try:
+        loop.run_episode("go", 8)
+        steps = [c.target[0] for c in driver.commands]
+        raw = [0.01 * (i + 1) for i in range(len(steps))]  # FakeClient rows start from a zero state
+        assert steps[0] == pytest.approx(raw[0])  # the first command passes through
+        assert steps[1] == pytest.approx((steps[0] + raw[1]) / 2)  # half-step toward row 2
+        assert steps[-1] < raw[-1]  # smoothing lags the raw plan
+    finally:
+        cam.stop()

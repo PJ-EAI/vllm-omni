@@ -37,6 +37,7 @@ class LoopConfig:
     in_flight: int = 1  # concurrent policy requests; >1 pipelines chunks to outpace a long RTT
     blend: str = "none"  # none | linear
     blend_steps: int = 5
+    smoothing: float = 1.0  # per-tick EMA weight of the new target (1 = off, 0.5 = half-step)
     jpeg_quality: int | None = None  # set (e.g. 90) to send JPEG over slow links
     max_frame_skew_ms: float = 50.0  # warn when a camera frame is older than the state by this much
 
@@ -49,6 +50,8 @@ class LoopConfig:
         cfg = cls(**d)
         if cfg.blend not in ("none", "linear"):
             raise ValueError(f"blend must be none or linear, got {cfg.blend!r}")
+        if not 0.0 < cfg.smoothing <= 1.0:
+            raise ValueError(f"smoothing must be in (0, 1], got {cfg.smoothing!r}")
         if cfg.in_flight < 1:
             raise ValueError(f"in_flight must be at least 1, got {cfg.in_flight}")
         return cfg
@@ -177,6 +180,7 @@ class ControlLoop:
         inflight: list[dict] = []  # {"tick", "thread", "out"} in fire order
         done: list[dict] = []
         last_command_at = time.monotonic()
+        last_sent: Command | None = None  # the last command actually sent, for EMA smoothing
         primed = False
         last_fire = -(1 << 30)
         fire_spacing = 1  # ticks between fires; learned from RTT so chunk coverage stays contiguous
@@ -270,12 +274,18 @@ class ControlLoop:
                     if (time.monotonic() - last_command_at) * 1e3 > self.safety.cfg.stale_ms:
                         self.driver.hold()
                         self.safety.reset()
+                        last_sent = None  # resume from the arm's actual state after a hold
                         stats.holds += 1
                         last_command_at = time.monotonic()
                 else:
                     safe = self.safety.filter(cmd, state)
                     if self.safety.sends:
+                        # EMA smoothing: step only part of the way to each new target, the
+                        # realarm equivalent of interpolating toward it inside the tick.
+                        if last_sent is not None and last_sent.mode == safe.mode and self.cfg.smoothing < 1.0:
+                            safe = _blend(last_sent, safe, self.cfg.smoothing)
                         self.driver.command(safe)
+                        last_sent = safe
                         stats.commands_sent += 1
                     last_command_at = time.monotonic()
                 stats.ticks += 1
