@@ -87,6 +87,66 @@ def test_eef_delta_axis_angle():
     np.testing.assert_allclose(geo.quat_to_rpy(out[3:]), [0, 0, 0.5], atol=1e-6)
 
 
+def _rx(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+
+
+def _rz(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+
+def _mat(q):
+    return np.stack([geo.quat_rotate(q, e) for e in np.eye(3)], axis=1)
+
+
+def _eef_adapter(**seg):
+    layout = [{"field": "eef_pose", "mode": "delta", "rotation": "axis_angle", **seg}]
+    return make_adapter({"images": {}, "action": {"space": "eef_pose", "layout": layout}}, {}, None)
+
+
+def test_eef_delta_previous_row_tool_frame():
+    # ARX delta-pose: each row is relative to the previous row's target, in the end effector frame.
+    adapter = _eef_adapter(delta_ref="previous_row", rotation_compose="tool", translation_frame="tool")
+    p0, r0 = np.array([0.4, 0.1, 0.3]), _rx(0.3)
+    obs = {"state": {"eef_pose": np.concatenate((p0, geo.rpy_to_quat(np.array([0.3, 0.0, 0.0]))))}}
+    robot = _robot(images=[], state=["eef_pose"], action_spaces=["eef_pose"])
+    rows = np.array(
+        [[0.01, 0.0, 0.02, 0.0, 0.0, 0.2], [0.0, 0.03, 0.0, 0.0, 0.0, 0.2], [0.01, 0.0, 0.0, 0.0, 0.0, 0.0]]
+    )
+    out = adapter.from_native(rows, obs, robot)["eef_pose"]
+    p, r = p0, r0
+    for i, row in enumerate(rows):
+        p, r = p + r @ row[:3], r @ _rz(row[5])
+        np.testing.assert_allclose(out[i, :3], p, atol=1e-6)
+        np.testing.assert_allclose(_mat(out[i, 3:]), r, atol=1e-6)
+
+
+def test_eef_delta_frames_differ():
+    obs = {"state": {"eef_pose": np.concatenate(([0.4, 0.1, 0.3], geo.rpy_to_quat(np.array([0.3, 0.0, 0.0]))))}}
+    robot = _robot(images=[], state=["eef_pose"], action_spaces=["eef_pose"])
+    rows = np.array([[0.0, 0.01, 0.0, 0.0, 0.0, 0.2]] * 2)
+    base = _eef_adapter().from_native(rows, obs, robot)["eef_pose"]
+    tool = _eef_adapter(rotation_compose="tool", translation_frame="tool").from_native(rows, obs, robot)["eef_pose"]
+    np.testing.assert_allclose(base[1], base[0], atol=1e-6)  # observation-relative: rows do not accumulate
+    np.testing.assert_allclose(_mat(base[0, 3:]), _rz(0.2) @ _rx(0.3), atol=1e-6)
+    np.testing.assert_allclose(_mat(tool[0, 3:]), _rx(0.3) @ _rz(0.2), atol=1e-6)
+    np.testing.assert_allclose(tool[0, :3], [0.4, 0.1, 0.3] + _rx(0.3) @ [0, 0.01, 0], atol=1e-6)
+
+
+def test_joint_delta_previous_row():
+    cfg = {
+        **CFG,
+        "action": {
+            "space": "joint_pos",
+            "layout": [{"field": "joint_pos", "mode": "delta", "delta_ref": "previous_row"}],
+        },
+    }
+    out = make_adapter(cfg, {}, "piper").from_native(np.full((3, 6), 0.1), _obs(), _robot())["joint_pos"]
+    np.testing.assert_allclose(out[:, 0], [0.1, 0.2, 0.3], rtol=1e-6)
+
+
 def test_config_errors():
     with pytest.raises(ValueError, match="unknown keys"):
         make_adapter({**CFG, "camera_map": {}}, {}, None)
@@ -94,3 +154,11 @@ def test_config_errors():
         make_adapter({**CFG, "action": {"space": "joint_pos", "layout": ["eef_pose"]}}, {}, None)
     with pytest.raises(ValueError, match="adapter kind"):
         make_adapter({"kind": "gr00t"}, {}, None)
+    with pytest.raises(ValueError, match="delta_ref"):
+        _eef_adapter(delta_ref="chunk_start")
+    with pytest.raises(ValueError, match="apply to eef_pose"):
+        make_adapter(
+            {**CFG, "action": {"space": "joint_pos", "layout": [{"field": "joint_pos", "rotation_compose": "tool"}]}},
+            {},
+            None,
+        )
