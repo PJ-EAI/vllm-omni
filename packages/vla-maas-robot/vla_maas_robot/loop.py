@@ -188,6 +188,29 @@ class ControlLoop:
             except BaseException as exc:  # handled on the control thread
                 out.update(error=exc)
 
+        def maybe_fire(tick: int, state) -> None:
+            """One new request per call, spacing- and queue-gated (see the loop body)."""
+            nonlocal last_fire
+            if (
+                tick - last_fire >= fire_spacing
+                and len(inflight) < self.in_flight
+                and len(self.queue) <= self.cfg.prefetch_threshold
+            ):
+                self._seq += 1
+                obs = self.adapter.build_obs(
+                    state,
+                    self._frames(stats, state.t),
+                    seq=self._seq,
+                    instruction=instruction,
+                    episode_id=stats.episode_id,
+                    jpeg_quality=self.cfg.jpeg_quality,
+                )
+                out: dict = {}
+                thread = threading.Thread(target=fetch, args=(obs, tick, out), daemon=True)
+                inflight.append({"tick": tick, "thread": thread, "out": out})
+                thread.start()
+                last_fire = tick
+
         try:
             for tick in range(max_steps):
                 if stop.is_set():
@@ -196,30 +219,12 @@ class ControlLoop:
                 tick_start = time.monotonic()
                 state = self.driver.read_state()
                 self.safety.check_state(state)
-                # At most one new request per tick keeps observations distinct; with
+                # At most one new request per call keeps observations distinct; with
                 # in_flight > 1 several are pipelined and installed in observation
                 # order below, so the queue never rewinds to an older plan. The
                 # spacing staggers fires so each chunk's surviving coverage
                 # (horizon - RTT rows) abuts the previous instead of clumping.
-                if (
-                    tick - last_fire >= fire_spacing
-                    and len(inflight) < self.in_flight
-                    and len(self.queue) <= self.cfg.prefetch_threshold
-                ):
-                    self._seq += 1
-                    obs = self.adapter.build_obs(
-                        state,
-                        self._frames(stats, state.t),
-                        seq=self._seq,
-                        instruction=instruction,
-                        episode_id=stats.episode_id,
-                        jpeg_quality=self.cfg.jpeg_quality,
-                    )
-                    out: dict = {}
-                    thread = threading.Thread(target=fetch, args=(obs, tick, out), daemon=True)
-                    inflight.append({"tick": tick, "thread": thread, "out": out})
-                    thread.start()
-                    last_fire = tick
+                maybe_fire(tick, state)
                 if not primed and not len(self.queue) and inflight:
                     inflight[0]["thread"].join()  # the first chunk of an episode is waited for
                 still: list[dict] = []
@@ -258,6 +263,7 @@ class ControlLoop:
                 done = []
                 if gateway_stop:
                     break
+                maybe_fire(tick, state)  # refire on the install tick itself, not the next one
                 cmd = self.queue.pop(tick)
                 if cmd is None:
                     stats.underruns += 1
