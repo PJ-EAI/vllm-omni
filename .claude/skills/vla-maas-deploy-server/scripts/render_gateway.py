@@ -88,6 +88,8 @@ def model_adapter(args: argparse.Namespace) -> dict:
     }
     if args.state_dim:
         adapter["state_dim"] = args.state_dim
+    if args.horizon:
+        adapter["horizon"] = args.horizon
     if args.denoise_steps:
         adapter["native_extra"] = {"sampling_params": {"num_inference_steps": args.denoise_steps}}
     return adapter
@@ -125,6 +127,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--front-key", default="observation.images.base_0_rgb", help="checkpoint camera key for 'front'")
     p.add_argument("--wrist-key", default="observation.images.left_wrist_0_rgb", help="checkpoint key for 'wrist'")
     p.add_argument("--state-dim", type=int, default=32, help="checkpoint observation.state width; 0 = no padding")
+    p.add_argument(
+        "--horizon",
+        type=int,
+        default=0,
+        help="action horizon reported to robots and used to trim chunks; 0 = the backend's action_horizon",
+    )
     p.add_argument("--control-hz", type=float, default=30.0, help="rate the training data was recorded at")
     p.add_argument(
         "--gripper-range",
