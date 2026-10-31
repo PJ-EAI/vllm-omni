@@ -35,7 +35,8 @@ pip install "./packages/vla-maas-robot[jpeg,realsense]"   # optional extras per 
 | `piper` | AgileX Piper over CAN (`piper_sdk`) | `piper` | [robots/piper.yaml](robots/piper.yaml) |
 | `arx` | ARX X5 over slcan (realarm's `bimanual` stack, Python 3.11 venv) | none | [robots/arx.yaml](robots/arx.yaml) |
 
-Franka (via `franky`) comes next. Each driver is one file under
+Franka (via `franky`) and single-arm ARX5 come next; see the
+[status and roadmap](../../apps/vla-maas-gateway/README.md#status-and-roadmap). Each driver is one file under
 `drivers/`, registered in `driver.DRIVERS`.
 
 ### AgileX Piper
@@ -56,9 +57,10 @@ Notes:
   episode stops.
 - Piper rests at its joint-2 and joint-3 limits (0 rad), so the example sets
   `joint_margin_rad: 0`.
-- The driver was tested against a fake SDK only. Check joint signs, the
-  end-pose Euler convention and gripper scale on the real arm in `dry_run`
-  first.
+- An end-to-end run on a real Piper passed. Per-item results (joint signs,
+  end-pose Euler convention, gripper scale) are not yet recorded in the
+  [studio TODO](../../apps/vla-maas-studio/TODO.md); on a new arm, still check
+  them in `dry_run` first.
 
 ## Use
 

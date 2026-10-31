@@ -24,6 +24,9 @@ Install the client extras: `pip install websockets msgpack msgpack-numpy` and
 [openpi](https://github.com/Physical-Intelligence/openpi) repo; it only needs the
 first three at runtime).
 
+What the service supports today and what is open: see the gateway's
+[status and roadmap](../../../apps/vla-maas-gateway/README.md#status-and-roadmap).
+
 ## Mock loop (CPU, no simulator)
 
 ```bash

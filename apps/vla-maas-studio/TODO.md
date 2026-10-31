@@ -1,9 +1,12 @@
 # VLA MaaS Studio TODO
 
-## AgileX Piper: real-arm checks (not run yet)
+## AgileX Piper: real-arm checks
+
+An end-to-end run on a real Piper passed (2026-10-27); the per-item results
+below are not recorded yet.
 
 The Piper driver (`packages/vla-maas-robot/vla_maas_robot/drivers/piper.py`) and
-the studio's robot mode were tested only against a fake `piper_sdk` and the
+the studio's robot mode were first tested against a fake `piper_sdk` and the
 MuJoCo twin. Check these on the real arm with
 `studio.py --robot-config <piper.yaml> --hardware`, in `dry_run` first, then
 `slow`, then `live`. Record the result and the commit next to each item.
