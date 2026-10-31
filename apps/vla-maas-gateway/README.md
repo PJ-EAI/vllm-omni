@@ -118,9 +118,93 @@ A model is available on `/act` once its entry has an `adapter`; see the
 docstring of `model_adapters.py` for every key. On public networks put the
 gateway behind a TLS-terminating proxy and give every robot its own key.
 
-## Not yet covered
+## Status and roadmap
 
-Multi-tenancy (tenants, quotas, billing), TLS termination (put it behind a
-reverse proxy), health-checked backend failover, adapters for models whose
-native output is not one action array (GR00T, DreamZero), and a plain HTTP
-inference endpoint for clients that cannot hold a websocket.
+Checked 2026-10-31 against `maas` `a8ee0ee` and `feat/arx-deltapose-adapter`
+`d28daf5`. Update this section when a PR lands or a real-hardware check
+finishes; keep claims to what was actually run.
+
+π0.5 runs end to end as a service: vllm-omni backend → gateway → standard Robot
+protocol → `vla-maas-robot`, verified on a real AgileX Piper. ARX X5 is
+connected and its real-arm link runs; its delta-pose conversion fix is not yet
+verified on the arm. The hierarchical layers (System 2 planner, System 0
+whole-body control) are design only.
+
+### Models
+
+| Model | OpenPI serving | Request batching | `/act` adapter | Notes |
+| --- | --- | --- | --- | --- |
+| π0.5 (`Pi05Pipeline`) | yes | yes | yes: `joint_pos`, `eef_pose` | Real Piper run passed; ARX delta-pose in progress |
+| π0 (`Pi0Pipeline`) | yes | no | `generic` should fit | Not run through the gateway |
+| GR00T N1.7 | yes | no | no | Output is not one action array; needs its own adapter kind |
+| DreamZero | yes (stateful) | no | no | Needs its own adapter kind and session stickiness |
+| Cosmos3 policy | yes | no | not configured | |
+| InternVLA-A1 | no (offline only) | no | no | Needs a deploy yaml with `policy_server_config`; demo route is a mock |
+
+The checklist for adding a model is in
+[`.claude/skills/vla-maas/references/models.md`](../../.claude/skills/vla-maas/references/models.md).
+
+### What exists
+
+- Gateway: everything listed at the top of this file (keys, routing, `/act`
+  and OpenPI routes, dashboard, live swap, structured logs, metrics).
+- Robot client: drivers `mock`, `piper` (real-arm run passed), `arx` (link
+  runs on the real arm); safety modes `dry_run` / `slow` / `live`.
+- On `feat/arx-deltapose-adapter`, not yet in `maas`: `eef_pose` delta
+  adapter options in `render_gateway.py`, pipelined policy requests
+  (`LoopConfig.in_flight`, keeps a 30 Hz loop fed across a ~230 ms RTT),
+  chunks merged by absolute tick, optional EMA smoothing of targets.
+- [Studio](../vla-maas-studio/README.md): browser console with mock, MuJoCo
+  (Panda, UR5e, xArm7) and Piper twin physics, plus a real-robot mode.
+- Simulation: LIBERO and robosuite fleets with per-episode video
+  ([examples](../../examples/online_serving/vla_maas/README.md)).
+- Deployment skills: `vla-maas-deploy-server` (one backend per GPU, including
+  8× RTX 4090 on one node), `vla-maas-deploy-robot`, `vla-maas-local-pi05`.
+- CI: `.github/workflows/vla-maas.yml` (protocol, robot, gateway and studio
+  tests, CPU smoke).
+
+### Open items
+
+- [ ] ARX: verify PR #14 (step-wise `eef_pose` deltas in the tool frame) on
+      the arm, `dry_run` then `slow`.
+- [ ] ARX: confirm whether translation deltas are in the tool frame and
+      whether the end point is `link6` or the TCP.
+- [ ] Merge `feat/arx-deltapose-adapter` into `maas` once verified.
+- [ ] GPU baselines: serial vs batched sweep and latency on real GPUs (only
+      mock sweeps exist). Recipe numbers for π0.5 are 156–398 ms client E2E;
+      the 100 ms target needs graph capture, fewer denoising steps and bf16.
+- [ ] Live swap on GPU backends and real arms (tested on CPU mocks only).
+- [ ] InternVLA-A1 online serving.
+- [ ] Record per-item Piper results in the
+      [studio TODO](../vla-maas-studio/TODO.md).
+- [ ] Drivers: Franka (`franky`), single-arm ARX5 (`arx5-sdk`).
+- [ ] Gateway: multi-tenancy (tenants, quotas, billing), built-in TLS (use a
+      reverse proxy for now), health-checked backend failover, adapters for
+      GR00T and DreamZero, a plain HTTP inference endpoint.
+
+### Next: model cards and embodiment matching (planned, not started)
+
+1. Model cards (read-only): `maas-model/1` model cards and embodiment cards,
+   loading the current inline `adapter:` unchanged, GET endpoints and
+   `ready.card_rev`.
+2. Dashboard: model and embodiment tabs, contract view, edit with validation,
+   diff and rollback.
+3. Robot client: SDK registry, `detect()`, `robotctl detect` / `models`,
+   automatic camera count and role detection.
+4. Robot console: `robotctl ui`, a local wizard (connect, identify the arm,
+   SDK, self-check, pick a model, run).
+
+The protocol only gains additive fields; `maas-robot/1` stays.
+
+### Later: hierarchical embodied systems
+
+| Layer | Rate | Where | Status |
+| --- | --- | --- | --- |
+| System 2 planner (VLM/LLM, subtasks) | 0.1–1 Hz | cloud, `/v1/planner/<model>/chat/completions` | planned |
+| System 1 VLA (action chunks) | 2–10 Hz | cloud, `/v1/robot/<model>/act` and `/openpi` | done |
+| System 0 whole-body / low-level control | ≥ 500 Hz | on the robot or edge; MaaS defines the interface only | planned |
+| Cross-layer sessions | — | gateway `/v1/sessions` | planned |
+
+The robot-side runtime orchestrates the layers; the cloud layers stay
+stateless. Open questions: which System 2 model (external API or
+self-hosted), and which body and controller System 0 targets first.
